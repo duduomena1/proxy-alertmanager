@@ -1,0 +1,43 @@
+{
+  "receiver": "teste integração",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "Memory Test Low Level - 192.168.1.102", 
+        "memory": "info",
+        "grafana_folder": "Alerts",
+        "instance": "192.168.1.102:9100",
+        "job": "node-exporter"
+      },
+      "annotations": {
+        "description": "Memória com uso moderado abaixo de 80%",
+        "summary": "Uso de memória moderado"
+      },
+      "startsAt": "2025-10-03T15:40:00Z", 
+      "endsAt": "0001-01-01T00:00:00Z",
+      "values": {
+        "A": 72.3,
+        "C": 1
+      }
+    }
+  ],
+  "groupLabels": {
+    "alertname": "Memory Test Low Level - 192.168.1.102",
+    "grafana_folder": "Alerts"
+  },
+  "commonLabels": {
+    "alertname": "Memory Test Low Level - 192.168.1.102",
+    "memory": "info", 
+    "grafana_folder": "Alerts",
+    "instance": "192.168.1.102:9100",
+    "job": "node-exporter"
+  },
+  "commonAnnotations": {
+    "description": "Memória com uso moderado abaixo de 80%",
+    "summary": "Uso de memória moderado"
+  },
+  "title": "[FIRING:1] Memory Test Low Level - 192.168.1.102",
+  "state": "alerting"
+}

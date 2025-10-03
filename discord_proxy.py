@@ -11,39 +11,131 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 APP_PORT = int(os.getenv("APP_PORT", "5001"))
 DEBUG_MODE = os.getenv("DEBUG_MODE", "False").lower() == "true"
 
-# GIFs e cores para diferentes tipos de alertas
+# Configurações de tipos de alertas com níveis de severidade
 ALERT_CONFIGS = {
     "cpu": {
         "emoji": "🖥️",
-        "gif": os.getenv("CPU_ALERT_GIF", ""),
-        "color_firing": int(os.getenv("CPU_COLOR_FIRING", "16776960")),  # Amarelo
-        "color_resolved": int(os.getenv("CPU_COLOR_RESOLVED", "65280"))   # Verde
+        "name": "CPU",
+        "unit": "%"
     },
     "memory": {
         "emoji": "💾",
-        "gif": os.getenv("MEMORY_ALERT_GIF", ""),
-        "color_firing": int(os.getenv("MEMORY_COLOR_FIRING", "16744192")),  # Rosa
-        "color_resolved": int(os.getenv("MEMORY_COLOR_RESOLVED", "65280"))    # Verde
+        "name": "MEMÓRIA",
+        "unit": "%"
     },
     "disk": {
         "emoji": "💿",
-        "gif": os.getenv("DISK_ALERT_GIF", ""),
-        "color_firing": int(os.getenv("DISK_COLOR_FIRING", "16711680")),   # Vermelho
-        "color_resolved": int(os.getenv("DISK_COLOR_RESOLVED", "65280"))     # Verde
+        "name": "DISCO",
+        "unit": "%"
     },
     "container": {
         "emoji": "🐳",
-        "gif": os.getenv("CONTAINER_ALERT_GIF", ""),
-        "color_firing": int(os.getenv("CONTAINER_COLOR_FIRING", "16753920")),  # Laranja
-        "color_resolved": int(os.getenv("CONTAINER_COLOR_RESOLVED", "65280"))    # Verde
+        "name": "CONTAINER",
+        "unit": ""
     },
     "default": {
         "emoji": "🚨",
-        "gif": os.getenv("DEFAULT_ALERT_GIF", ""),
-        "color_firing": int(os.getenv("DEFAULT_COLOR_FIRING", "16711680")),   # Vermelho
-        "color_resolved": int(os.getenv("DEFAULT_COLOR_RESOLVED", "65280"))     # Verde
+        "name": "SISTEMA",
+        "unit": ""
     }
 }
+
+# Configurações de severidade baseadas no valor da métrica
+SEVERITY_LEVELS = {
+    "low": {
+        "threshold_min": 0,
+        "threshold_max": 80,
+        "emoji": "⚠️",
+        "label": "ATENÇÃO",
+        "colors": {
+            "cpu": int(os.getenv("CPU_LOW_COLOR", "16776960")),      # Amarelo
+            "memory": int(os.getenv("MEMORY_LOW_COLOR", "16776960")),  # Amarelo
+            "disk": int(os.getenv("DISK_LOW_COLOR", "16776960")),     # Amarelo
+            "container": int(os.getenv("CONTAINER_LOW_COLOR", "16776960")), # Amarelo
+            "default": int(os.getenv("DEFAULT_LOW_COLOR", "16776960"))   # Amarelo
+        },
+        "gifs": {
+            "cpu": os.getenv("CPU_LOW_GIF", ""),
+            "memory": os.getenv("MEMORY_LOW_GIF", ""),
+            "disk": os.getenv("DISK_LOW_GIF", ""),
+            "container": os.getenv("CONTAINER_LOW_GIF", ""),
+            "default": os.getenv("DEFAULT_LOW_GIF", "")
+        }
+    },
+    "medium": {
+        "threshold_min": 80,
+        "threshold_max": 90,
+        "emoji": "🚧",
+        "label": "ALERTA",
+        "colors": {
+            "cpu": int(os.getenv("CPU_MEDIUM_COLOR", "16753920")),      # Laranja
+            "memory": int(os.getenv("MEMORY_MEDIUM_COLOR", "16753920")),  # Laranja
+            "disk": int(os.getenv("DISK_MEDIUM_COLOR", "16753920")),     # Laranja
+            "container": int(os.getenv("CONTAINER_MEDIUM_COLOR", "16753920")), # Laranja
+            "default": int(os.getenv("DEFAULT_MEDIUM_COLOR", "16753920"))   # Laranja
+        },
+        "gifs": {
+            "cpu": os.getenv("CPU_MEDIUM_GIF", ""),
+            "memory": os.getenv("MEMORY_MEDIUM_GIF", ""),
+            "disk": os.getenv("DISK_MEDIUM_GIF", ""),
+            "container": os.getenv("CONTAINER_MEDIUM_GIF", ""),
+            "default": os.getenv("DEFAULT_MEDIUM_GIF", "")
+        }
+    },
+    "high": {
+        "threshold_min": 90,
+        "threshold_max": 100,
+        "emoji": "🔥",
+        "label": "CRÍTICO",
+        "colors": {
+            "cpu": int(os.getenv("CPU_HIGH_COLOR", "16711680")),      # Vermelho
+            "memory": int(os.getenv("MEMORY_HIGH_COLOR", "16711680")),  # Vermelho
+            "disk": int(os.getenv("DISK_HIGH_COLOR", "16711680")),     # Vermelho
+            "container": int(os.getenv("CONTAINER_HIGH_COLOR", "16711680")), # Vermelho
+            "default": int(os.getenv("DEFAULT_HIGH_COLOR", "16711680"))   # Vermelho
+        },
+        "gifs": {
+            "cpu": os.getenv("CPU_HIGH_GIF", ""),
+            "memory": os.getenv("MEMORY_HIGH_GIF", ""),
+            "disk": os.getenv("DISK_HIGH_GIF", ""),
+            "container": os.getenv("CONTAINER_HIGH_GIF", ""),
+            "default": os.getenv("DEFAULT_HIGH_GIF", "")
+        }
+    },
+    "resolved": {
+        "emoji": "✅",
+        "label": "RESOLVIDO",
+        "color": int(os.getenv("RESOLVED_COLOR", "65280")),  # Verde
+        "gif": os.getenv("RESOLVED_GIF", "")
+    }
+}
+
+def get_severity_level(metric_value, alert_type="default"):
+    """Determina o nível de severidade baseado no valor da métrica"""
+    if metric_value < 80:
+        return "low"
+    elif 80 <= metric_value < 90:
+        return "medium"
+    else:
+        return "high"
+
+def get_severity_config(severity_level, alert_type="default"):
+    """Retorna as configurações de cor e GIF para o nível de severidade"""
+    if severity_level == "resolved":
+        return {
+            "emoji": SEVERITY_LEVELS["resolved"]["emoji"],
+            "label": SEVERITY_LEVELS["resolved"]["label"],
+            "color": SEVERITY_LEVELS["resolved"]["color"],
+            "gif": SEVERITY_LEVELS["resolved"]["gif"]
+        }
+    
+    level_config = SEVERITY_LEVELS.get(severity_level, SEVERITY_LEVELS["low"])
+    return {
+        "emoji": level_config["emoji"],
+        "label": level_config["label"],
+        "color": level_config["colors"].get(alert_type, level_config["colors"]["default"]),
+        "gif": level_config["gifs"].get(alert_type, level_config["gifs"]["default"])
+    }
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -152,76 +244,95 @@ def handle_grafana_alert(data):
         alert_status = alert_data.get('status', 'unknown')
         is_firing = alert_status == 'firing'
         
+        # Determina o nível de severidade baseado no valor e status
+        if is_firing:
+            severity_level = get_severity_level(metric_value, alert_type)
+        else:
+            severity_level = "resolved"
+        
+        # Pega as configurações de severidade
+        severity_config = get_severity_config(severity_level, alert_type)
+        
         # Monta mensagem específica por tipo
         if alert_type == 'disk':
-            content = f"""{config['emoji']} **ALERTA DE DISCO**
+            content = f"""{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}
 
+**Nível:** `{severity_config['label']}`
 **Servidor:** `{instance}`
 **Dispositivo:** `{device}`
 **Ponto de montagem:** `{mountpoint}`
-**Uso atual:** `{metric_value:.1f}%`
+**Uso atual:** `{metric_value:.1f}{config['unit']}`
 
 **Descrição:** {description}
 **Status:** {alert_status.upper()}
 **Hora:** {format_timestamp(alert_data.get('startsAt', 'N/A'))}"""
             
         elif alert_type == 'cpu':
-            content = f"""{config['emoji']} **ALERTA DE CPU**
+            content = f"""{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}
 
+**Nível:** `{severity_config['label']}`
 **Servidor:** `{instance}`
-**Uso atual:** `{metric_value:.1f}%`
+**Uso atual:** `{metric_value:.1f}{config['unit']}`
 
 **Descrição:** {description}
 **Status:** {alert_status.upper()}
 **Hora:** {format_timestamp(alert_data.get('startsAt', 'N/A'))}"""
             
         elif alert_type == 'memory':
-            content = f"""{config['emoji']} **ALERTA DE MEMÓRIA**
+            content = f"""{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}
 
+**Nível:** `{severity_config['label']}`
 **Servidor:** `{instance}`
-**Uso atual:** `{metric_value:.1f}%`
+**Uso atual:** `{metric_value:.1f}{config['unit']}`
 
 **Descrição:** {description}
 **Status:** {alert_status.upper()}
 **Hora:** {format_timestamp(alert_data.get('startsAt', 'N/A'))}"""
             
         elif alert_type == 'container':
-            content = f"""{config['emoji']} **ALERTA DE CONTAINER**
+            content = f"""{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}
 
+**Nível:** `{severity_config['label']}`
 **Servidor:** `{instance}`
 **Container:** `{device}`
-**Valor:** `{metric_value:.1f}`
+**Valor:** `{metric_value:.1f}{config['unit']}`
 
 **Descrição:** {description}
 **Status:** {alert_status.upper()}
 **Hora:** {format_timestamp(alert_data.get('startsAt', 'N/A'))}"""
             
         else:  # default
-            content = f"""{config['emoji']} **ALERTA DO SISTEMA**
+            content = f"""{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}
 
+**Nível:** `{severity_config['label']}`
 **Servidor:** `{instance}`
 **Componente:** `{device}`
-**Valor:** `{metric_value:.1f}`
+**Valor:** `{metric_value:.1f}{config['unit']}`
 
 **Descrição:** {description}
 **Status:** {alert_status.upper()}
 **Hora:** {format_timestamp(alert_data.get('startsAt', 'N/A'))}"""
         
-        # Monta embed
+        # Monta embed com cor baseada na severidade
         embed = {
-            "color": config['color_firing'] if is_firing else config['color_resolved'],
+            "color": severity_config['color'],
             "fields": [
                 {
-                    "name": "Detalhes Técnicos",
-                    "value": f"**Alert:** {alertname}\n**Instance:** {labels.get('instance', 'N/A')}",
+                    "name": "📊 Detalhes Técnicos",
+                    "value": f"**Alert:** {alertname}\n**Instance:** {labels.get('instance', 'N/A')}\n**Severidade:** {severity_config['label']}",
+                    "inline": True
+                },
+                {
+                    "name": "📈 Métricas",
+                    "value": f"**Valor:** {metric_value:.1f}{config['unit']}\n**Limite:** {SEVERITY_LEVELS[severity_level]['threshold_min'] if severity_level != 'resolved' else 'N/A'}-{SEVERITY_LEVELS[severity_level]['threshold_max'] if severity_level != 'resolved' else 'N/A'}%",
                     "inline": True
                 }
             ]
         }
         
-        # Adiciona GIF se configurado
-        if config['gif']:
-            embed["image"] = {"url": config['gif']}
+        # Adiciona GIF baseado na severidade se configurado
+        if severity_config['gif']:
+            embed["image"] = {"url": severity_config['gif']}
         
         processed_alerts.append({
             "content": content,

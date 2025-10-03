@@ -21,6 +21,24 @@ Um proxy inteligente e personalizável para enviar alertas do Grafana para o Dis
 | **Container** | 🐳 | `container`, `docker`, `pod` | Container parado |
 | **Padrão** | 🚨 | Outros tipos | Alertas genéricos |
 
+## 📊 Sistema de Severidade Inteligente
+
+O proxy automaticamente classifica os alertas em níveis baseados no valor da métrica:
+
+| Nível | Range | Emoji | Cor | Descrição |
+|-------|-------|-------|-----|-----------|
+| **ATENÇÃO** | 0-79% | ⚠️ | 🟡 Amarelo | Uso moderado, monitoramento |
+| **ALERTA** | 80-89% | 🚧 | 🟠 Laranja | Uso alto, atenção necessária |
+| **CRÍTICO** | 90-100% | 🔥 | 🔴 Vermelho | Uso crítico, ação imediata |
+| **RESOLVIDO** | - | ✅ | 🟢 Verde | Alerta foi resolvido |
+
+### Personalização por Nível
+
+Cada nível pode ter GIFs e cores diferentes para cada tipo de alerta:
+- **3 GIFs** diferentes por tipo de alerta (CPU, Disco, Memória, Container)
+- **Cores personalizáveis** para cada combinação nível + tipo
+- **Detecção automática** do nível baseado no valor da métrica
+
 ## 📋 Pré-requisitos
 
 - Docker e Docker Compose
@@ -96,10 +114,11 @@ CONTAINER_COLOR_FIRING=16753920 # Laranja
 
 ## 📊 Exemplo de Saída
 
-### Alerta de Disco
+### Alerta de Disco (Nível ALERTA)
 ```
-💿 **ALERTA DE DISCO**
+💿 **ALERTA DE DISCO** 🚧
 
+**Nível:** `ALERTA`
 **Servidor:** `10.2.100.13`
 **Dispositivo:** `/dev/mapper/tatico--candeias--vg-root`
 **Ponto de montagem:** `/`
@@ -110,12 +129,13 @@ CONTAINER_COLOR_FIRING=16753920 # Laranja
 **Hora:** 2025-10-03 13:44:00
 ```
 
-### Alerta de CPU
+### Alerta de CPU (Nível CRÍTICO)
 ```
-🖥️ **ALERTA DE CPU**
+🖥️ **ALERTA DE CPU** 🔥
 
+**Nível:** `CRÍTICO`
 **Servidor:** `10.2.100.13`
-**Uso atual:** `85.2%`
+**Uso atual:** `95.2%`
 
 **Descrição:** Uso de CPU crítico
 **Status:** FIRING
