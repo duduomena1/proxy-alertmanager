@@ -1,20 +1,42 @@
 
+# Dockerfile Simplificado - Discord Proxy
+
 FROM python:3.11-slim
 
 WORKDIR /app
 
+# Instala dependências do sistema
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copia requirements primeiro para cache de build
 COPY requirements.txt .
 
+# Instala dependências Python
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copia código da aplicação
 COPY discord_proxy.py .
+
+# Configurações de produção
+ENV FLASK_APP=discord_proxy.py
+ENV PYTHONPATH=/app
+ENV DEBUG_MODE=false
+ENV FLASK_ENV=production
+
+# Cria usuário não-root
+RUN adduser --disabled-password --gecos '' --uid 1000 appuser && \
+    chown -R appuser:appuser /app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:5001/health || exit 1
+
+USER appuser
 
 EXPOSE 5001
 
-ENV FLASK_APP=discord_proxy.py
-ENV PYTHONPATH=/app
-
-RUN adduser --disabled-password --gecos '' appuser && \
-    chown -R appuser:appuser /app
-USER appuser
-CMD ["python", "discord_proxy.py"]
+# Comando para produção
+CMD ["python", "-u", "discord_proxy.py"]

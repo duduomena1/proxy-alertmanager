@@ -51,14 +51,13 @@ SEVERITY_LEVELS = {
             "cpu": int(os.getenv("CPU_LOW_COLOR", "16776960")),      # Amarelo
             "memory": int(os.getenv("MEMORY_LOW_COLOR", "16776960")),  # Amarelo
             "disk": int(os.getenv("DISK_LOW_COLOR", "16776960")),     # Amarelo
-            "container": int(os.getenv("CONTAINER_LOW_COLOR", "16776960")), # Amarelo
+
             "default": int(os.getenv("DEFAULT_LOW_COLOR", "16776960"))   # Amarelo
         },
         "gifs": {
             "cpu": os.getenv("CPU_LOW_GIF", ""),
             "memory": os.getenv("MEMORY_LOW_GIF", ""),
             "disk": os.getenv("DISK_LOW_GIF", ""),
-            "container": os.getenv("CONTAINER_LOW_GIF", ""),
             "default": os.getenv("DEFAULT_LOW_GIF", "")
         }
     },
@@ -71,14 +70,12 @@ SEVERITY_LEVELS = {
             "cpu": int(os.getenv("CPU_MEDIUM_COLOR", "16753920")),      # Laranja
             "memory": int(os.getenv("MEMORY_MEDIUM_COLOR", "16753920")),  # Laranja
             "disk": int(os.getenv("DISK_MEDIUM_COLOR", "16753920")),     # Laranja
-            "container": int(os.getenv("CONTAINER_MEDIUM_COLOR", "16753920")), # Laranja
             "default": int(os.getenv("DEFAULT_MEDIUM_COLOR", "16753920"))   # Laranja
         },
         "gifs": {
             "cpu": os.getenv("CPU_MEDIUM_GIF", ""),
             "memory": os.getenv("MEMORY_MEDIUM_GIF", ""),
             "disk": os.getenv("DISK_MEDIUM_GIF", ""),
-            "container": os.getenv("CONTAINER_MEDIUM_GIF", ""),
             "default": os.getenv("DEFAULT_MEDIUM_GIF", "")
         }
     },
@@ -91,16 +88,26 @@ SEVERITY_LEVELS = {
             "cpu": int(os.getenv("CPU_HIGH_COLOR", "16711680")),      # Vermelho
             "memory": int(os.getenv("MEMORY_HIGH_COLOR", "16711680")),  # Vermelho
             "disk": int(os.getenv("DISK_HIGH_COLOR", "16711680")),     # Vermelho
-            "container": int(os.getenv("CONTAINER_HIGH_COLOR", "16711680")), # Vermelho
             "default": int(os.getenv("DEFAULT_HIGH_COLOR", "16711680"))   # Vermelho
         },
         "gifs": {
             "cpu": os.getenv("CPU_HIGH_GIF", ""),
             "memory": os.getenv("MEMORY_HIGH_GIF", ""),
             "disk": os.getenv("DISK_HIGH_GIF", ""),
-            "container": os.getenv("CONTAINER_HIGH_GIF", ""),
             "default": os.getenv("DEFAULT_HIGH_GIF", "")
         }
+    },
+    "container_down": {
+        "emoji": "🚨",
+        "label": "CONTAINER OFFLINE",
+        "color": int(os.getenv("CONTAINER_DOWN_COLOR", "16711680")),  # Vermelho
+        "gif": os.getenv("CONTAINER_DOWN_GIF", "")
+    },
+    "container_up": {
+        "emoji": "✅",
+        "label": "CONTAINER ONLINE",
+        "color": int(os.getenv("CONTAINER_UP_COLOR", "65280")),  # Verde
+        "gif": os.getenv("CONTAINER_UP_GIF", "")
     },
     "resolved": {
         "emoji": "✅",
@@ -112,6 +119,15 @@ SEVERITY_LEVELS = {
 
 def get_severity_level(metric_value, alert_type="default"):
     """Determina o nível de severidade baseado no valor da métrica"""
+    
+    # Container tem lógica específica: 0 = down, 1 = up
+    if alert_type == "container":
+        if metric_value == 0:
+            return "container_down"
+        else:
+            return "container_up"
+    
+    # Para outros tipos, usa percentuais
     if metric_value < 80:
         return "low"
     elif 80 <= metric_value < 90:
@@ -121,14 +137,18 @@ def get_severity_level(metric_value, alert_type="default"):
 
 def get_severity_config(severity_level, alert_type="default"):
     """Retorna as configurações de cor e GIF para o nível de severidade"""
-    if severity_level == "resolved":
+    
+    # Configurações especiais para containers
+    if severity_level in ["container_down", "container_up", "resolved"]:
+        level_config = SEVERITY_LEVELS[severity_level]
         return {
-            "emoji": SEVERITY_LEVELS["resolved"]["emoji"],
-            "label": SEVERITY_LEVELS["resolved"]["label"],
-            "color": SEVERITY_LEVELS["resolved"]["color"],
-            "gif": SEVERITY_LEVELS["resolved"]["gif"]
+            "emoji": level_config["emoji"],
+            "label": level_config["label"],
+            "color": level_config["color"],
+            "gif": level_config["gif"]
         }
     
+    # Configurações para níveis baseados em percentual
     level_config = SEVERITY_LEVELS.get(severity_level, SEVERITY_LEVELS["low"])
     return {
         "emoji": level_config["emoji"],
@@ -290,15 +310,16 @@ def handle_grafana_alert(data):
 **Hora:** {format_timestamp(alert_data.get('startsAt', 'N/A'))}"""
             
         elif alert_type == 'container':
+            container_status = "🟢 RODANDO" if metric_value == 1 else "🔴 PARADO"
             content = f"""{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}
 
-**Nível:** `{severity_config['label']}`
+**Status:** `{severity_config['label']}`
 **Servidor:** `{instance}`
 **Container:** `{device}`
-**Valor:** `{metric_value:.1f}{config['unit']}`
+**Estado:** {container_status}
 
 **Descrição:** {description}
-**Status:** {alert_status.upper()}
+**Status do Alerta:** {alert_status.upper()}
 **Hora:** {format_timestamp(alert_data.get('startsAt', 'N/A'))}"""
             
         else:  # default
@@ -321,14 +342,29 @@ def handle_grafana_alert(data):
                     "name": "📊 Detalhes Técnicos",
                     "value": f"**Alert:** {alertname}\n**Instance:** {labels.get('instance', 'N/A')}\n**Severidade:** {severity_config['label']}",
                     "inline": True
-                },
-                {
-                    "name": "📈 Métricas",
-                    "value": f"**Valor:** {metric_value:.1f}{config['unit']}\n**Limite:** {SEVERITY_LEVELS[severity_level]['threshold_min'] if severity_level != 'resolved' else 'N/A'}-{SEVERITY_LEVELS[severity_level]['threshold_max'] if severity_level != 'resolved' else 'N/A'}%",
-                    "inline": True
                 }
             ]
         }
+        
+        # Campo de métricas específico por tipo
+        if alert_type == 'container':
+            container_status = "RODANDO" if metric_value == 1 else "PARADO"
+            embed["fields"].append({
+                "name": "🐳 Status do Container",
+                "value": f"**Estado:** {container_status}\n**Container:** {device}",
+                "inline": True
+            })
+        else:
+            # Para CPU, Memória, Disco - mostra percentuais e limites
+            threshold_text = "N/A"
+            if severity_level in SEVERITY_LEVELS and 'threshold_min' in SEVERITY_LEVELS[severity_level]:
+                threshold_text = f"{SEVERITY_LEVELS[severity_level]['threshold_min']}-{SEVERITY_LEVELS[severity_level]['threshold_max']}%"
+            
+            embed["fields"].append({
+                "name": "📈 Métricas",
+                "value": f"**Valor:** {metric_value:.1f}{config['unit']}\n**Limite:** {threshold_text}",
+                "inline": True
+            })
         
         # Adiciona GIF baseado na severidade se configurado
         if severity_config['gif']:

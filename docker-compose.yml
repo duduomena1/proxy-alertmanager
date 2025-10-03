@@ -1,51 +1,50 @@
-version: '3.8'
 
 services:
   grafana-discord-proxy:
     build: .
-    container_name: grafana-discord-proxy
+    container_name: grafana-discord-proxy-prod
     ports:
       - "5001:5001"
     env_file:
-      - .env    
+      - .env
+    environment:
+      - DEBUG_MODE=false
+      - FLASK_ENV=production
     restart: unless-stopped
     networks:
-      - monitoring
+      - grafana_observability
     
-    # Health check para verificar se a aplicação está funcionando
+    # Recursos limitados para produção
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    
+    # Health check otimizado para produção
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5001/health"]
+      interval: 15s
+      timeout: 5s
       retries: 3
-      start_period: 40s
+      start_period: 30s
     
-    # Logs configuration
+    # Logs configuration para produção
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "5m"
+        max-file: "5"
+        
+    # Security e performance
+    security_opt:
+      - no-new-privileges:true
+    read_only: false
+    user: "1000:1000"
 
 networks:
-  monitoring:
+  grafana_observability:
     driver: bridge
-
-# Para usar junto com Grafana existente:
-# version: '3.8'
-# 
-# services:
-#   grafana-discord-proxy:
-#     build: .
-#     container_name: grafana-discord-proxy
-#     ports:
-#       - "5001:5001"
-#     env_file:
-#       - .env
-#     restart: unless-stopped
-#     networks:
-#       - grafana_default  # Use a rede do Grafana existente
-# 
-# networks:
-#   grafana_default:
-#     external: true

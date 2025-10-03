@@ -1,0 +1,44 @@
+{
+  "receiver": "teste integração",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "Container Status Alert - nginx-server",
+        "container": "nginx",
+        "instance": "192.168.1.100:9100",
+        "job": "docker-nginx",
+        "severity": "critical"
+      },
+      "annotations": {
+        "description": "🐳 Container nginx no servidor 192.168.1.100 está OFFLINE",
+        "summary": "Container nginx parou de responder"
+      },
+      "startsAt": "2025-10-03T16:00:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "values": {
+        "A": 0,
+        "C": 1
+      },
+      "valueString": "[ var='A' labels={container=nginx, instance=192.168.1.100:9100, job=docker-nginx} value=0 ]"
+    }
+  ],
+  "groupLabels": {
+    "alertname": "Container Status Alert - nginx-server",
+    "severity": "critical"
+  },
+  "commonLabels": {
+    "alertname": "Container Status Alert - nginx-server",
+    "container": "nginx",
+    "instance": "192.168.1.100:9100",
+    "job": "docker-nginx",
+    "severity": "critical"
+  },
+  "commonAnnotations": {
+    "description": "🐳 Container nginx no servidor 192.168.1.100 está OFFLINE",
+    "summary": "Container nginx parou de responder"
+  },
+  "title": "[FIRING:1] Container Status Alert - nginx-server",
+  "state": "alerting"
+}

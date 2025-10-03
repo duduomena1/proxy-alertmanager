@@ -1,0 +1,126 @@
+{{ define "__discord_proxy_alertmanager" }}Discord Proxy Alertmanager{{ end }}
+
+{{ define "__discord_proxy_url" }}{{.ExternalURL}}/#/alerts?receiver={{.Receiver | urlquery}}{{ end }}
+
+{{ define "__discord_proxy_subject" }}[{{.Status | toUpper}}{{if eq .Status "firing"}}:{{.Alerts.Firing | len}}{{if gt (.Alerts.Resolved | len) 0}}, RESOLVED:{{.Alerts.Resolved | len}}{{end}}{{end}}] {{.GroupLabels.SortedPairs.Values | join " "}} {{if gt (len .CommonLabels) (len .GroupLabels)}}({{with .CommonLabels.Remove .GroupLabels.Names}}{{.Values | join " "}}{{end}}){{end}}{{ end }}
+
+{{ define "__discord_proxy_alert_context" }}{{range .}}
+{{/* Determinar tipo de alerta baseado nos labels */}}
+{{- $alertType := "system" -}}
+{{- $deviceInfo := "" -}}
+{{- $containerInfo := "" -}}
+{{- $mountInfo := "" -}}
+{{- $metricValue := 0.0 -}}
+
+{{/* Detectar tipo de alerta pelos labels */}}
+{{- if .Labels.device -}}
+  {{- $alertType = "disk" -}}
+  {{- $deviceInfo = .Labels.device -}}
+  {{- $mountInfo = (.Labels.mountpoint | default "/") -}}
+{{- else if (or (.Labels.container) (contains "container" (.Labels.job | lower)) (contains "docker" (.Labels.job | lower))) -}}
+  {{- $alertType = "container" -}}
+  {{- $containerInfo = (.Labels.container | default .Labels.job) -}}
+{{- else if (contains "cpu" (.Labels.alertname | lower)) -}}
+  {{- $alertType = "cpu" -}}
+{{- else if (or (contains "memory" (.Labels.alertname | lower)) (contains "mem" (.Labels.alertname | lower))) -}}
+  {{- $alertType = "memory" -}}
+{{- end -}}
+
+{{/* Extrair valor da métrica */}}
+{{- if .Values -}}
+  {{- range $k, $v := .Values -}}
+    {{- if eq $k "A" -}}{{- $metricValue = $v -}}{{- end -}}
+  {{- end -}}
+{{- end -}}
+
+alertname: {{if eq $alertType "disk"}}Disk Alert - {{ .Labels.instance }}{{else if eq $alertType "cpu"}}CPU Alert - {{ .Labels.instance }}{{else if eq $alertType "memory"}}Memory Alert - {{ .Labels.instance }}{{else if eq $alertType "container"}}Container Alert - {{ $containerInfo }}{{else}}System Alert - {{ .Labels.instance }}{{end}}
+instance: {{ .Labels.instance | default "unknown" }}
+job: {{ .Labels.job | default "unknown" }}
+{{- if eq $alertType "disk" }}
+device: {{ $deviceInfo }}
+mountpoint: {{ $mountInfo }}
+fstype: {{ .Labels.fstype | default "unknown" }}
+{{- end }}
+{{- if eq $alertType "container" }}
+container: {{ $containerInfo }}
+{{- end }}
+severity: {{if eq $alertType "container"}}{{if eq .Status "firing"}}container_down{{else}}container_up{{end}}{{else}}{{if ge $metricValue 90.0}}high{{else if ge $metricValue 80.0}}medium{{else}}low{{end}}{{end}}
+alert_type: {{ $alertType }}
+description: {{if eq $alertType "disk"}}Disk usage is {{ printf "%.1f" $metricValue }}% on device {{ $deviceInfo }} ({{ $mountInfo }}) at server {{ .Labels.instance }}. {{ if ge $metricValue 90.0 }}Critical level - immediate action required.{{ else if ge $metricValue 80.0 }}High usage detected - monitoring required.{{ else }}Disk space monitoring active.{{ end }}{{else if eq $alertType "cpu"}}CPU usage is {{ printf "%.1f" $metricValue }}% on server {{ .Labels.instance }}. {{ if ge $metricValue 90.0 }}Critical processor load affecting performance.{{ else if ge $metricValue 80.0 }}High CPU load detected.{{ else }}CPU monitoring active.{{ end }}{{else if eq $alertType "memory"}}Memory usage is {{ printf "%.1f" $metricValue }}% on server {{ .Labels.instance }}. {{ if ge $metricValue 90.0 }}Critical memory usage - system may become unstable.{{ else if ge $metricValue 80.0 }}High memory usage detected.{{ else }}Memory monitoring active.{{ end }}{{else if eq $alertType "container"}}Container {{ $containerInfo }} is {{ if eq .Status "firing" }}DOWN{{ else }}UP{{ end }} on server {{ .Labels.instance }}. {{ if eq .Status "firing" }}Service requires immediate attention.{{ else }}Service has recovered successfully.{{ end }}{{else}}System monitoring alert on {{ .Labels.instance }}. Value: {{ printf "%.1f" $metricValue }}{{ end }}
+summary: {{if eq $alertType "disk"}}Disk Alert - {{ .Labels.instance }} device {{ $deviceInfo }} ({{ printf "%.1f" $metricValue }}%){{else if eq $alertType "cpu"}}CPU Alert - {{ .Labels.instance }} ({{ printf "%.1f" $metricValue }}%){{else if eq $alertType "memory"}}Memory Alert - {{ .Labels.instance }} ({{ printf "%.1f" $metricValue }}%){{else if eq $alertType "container"}}Container {{ if eq .Status "firing" }}DOWN{{ else }}UP{{ end }} - {{ $containerInfo }} on {{ .Labels.instance }}{{else}}System Alert - {{ .Labels.instance }}{{end}}
+values_A: {{ $metricValue }}
+startsAt: {{ .StartsAt }}
+status: {{ .Status }}
+---
+{{end}}{{ end }}
+
+{{ define "discord.proxy.title" }}{{template "__discord_proxy_subject" .}}{{ end }}
+
+{{ define "discord.proxy.text" }}
+{{if gt (len .Alerts.Firing) 0}}
+🔥 **ALERTAS ATIVOS ({{ .Alerts.Firing | len }})**
+{{template "__discord_proxy_alert_context" .Alerts.Firing}}
+{{end}}
+
+{{if gt (len .Alerts.Resolved) 0}}
+✅ **ALERTAS RESOLVIDOS ({{ .Alerts.Resolved | len }})**  
+{{template "__discord_proxy_alert_context" .Alerts.Resolved}}
+{{end}}
+
+📊 **Alertmanager**: {{template "__discord_proxy_url" .}}
+{{ end }}
+
+{{ define "webhook.discord.default.title" }}{{template "discord.proxy.title" .}}{{ end }}
+
+{{ define "webhook.discord.default.text" }}{{template "discord.proxy.text" .}}{{ end }}
+
+{{ define "discord.default.message" }}
+{{if gt (len .Alerts.Firing) 0}}
+🚨 **Alertas Disparando:**
+{{range .Alerts.Firing}}
+{{/* Auto-detecta tipo e formata adequadamente */}}
+{{- $alertType := "system" -}}
+{{- $value := 0.0 -}}
+{{- if .Values -}}{{- range $k, $v := .Values -}}{{- if eq $k "A" -}}{{- $value = $v -}}{{- end -}}{{- end -}}{{- end -}}
+{{- if .Labels.device -}}{{- $alertType = "disk" -}}
+{{- else if (or (.Labels.container) (contains "container" (.Labels.job | lower))) -}}{{- $alertType = "container" -}}
+{{- else if (contains "cpu" (.Labels.alertname | lower)) -}}{{- $alertType = "cpu" -}}
+{{- else if (contains "memory" (.Labels.alertname | lower)) -}}{{- $alertType = "memory" -}}{{- end -}}
+
+**Alert:** {{if eq $alertType "disk"}}💿 Disk Alert{{else if eq $alertType "cpu"}}🖥️ CPU Alert{{else if eq $alertType "memory"}}💾 Memory Alert{{else if eq $alertType "container"}}🐳 Container Alert{{else}}🚨 System Alert{{end}}
+**Server:** {{ .Labels.instance | default "unknown" }}
+{{- if eq $alertType "disk" }}
+**Device:** {{ .Labels.device }} ({{ .Labels.mountpoint | default "/" }})
+**Usage:** {{ printf "%.1f" $value }}%
+{{- else if eq $alertType "container" }}
+**Container:** {{ .Labels.container | default .Labels.job }}
+**Status:** {{ if eq .Status "firing" }}🔴 DOWN{{ else }}🟢 UP{{ end }}
+{{- else }}
+**Usage:** {{ printf "%.1f" $value }}%
+{{- end }}
+**Level:** {{ if eq $alertType "container" }}{{ if eq .Status "firing" }}CRITICAL{{ else }}RECOVERED{{ end }}{{ else }}{{ if ge $value 90.0 }}🔥 CRITICAL{{ else if ge $value 80.0 }}🚧 HIGH{{ else }}⚠️ MODERATE{{ end }}{{ end }}
+**Time:** {{ .StartsAt }}
+
+{{end}}
+{{end}}
+
+{{if gt (len .Alerts.Resolved) 0}}
+✅ **Alertas Resolvidos:**
+{{range .Alerts.Resolved}}
+{{- $alertType := "system" -}}
+{{- if .Labels.device -}}{{- $alertType = "disk" -}}
+{{- else if (or (.Labels.container) (contains "container" (.Labels.job | lower))) -}}{{- $alertType = "container" -}}
+{{- else if (contains "cpu" (.Labels.alertname | lower)) -}}{{- $alertType = "cpu" -}}
+{{- else if (contains "memory" (.Labels.alertname | lower)) -}}{{- $alertType = "memory" -}}{{- end -}}
+
+**Alert:** {{if eq $alertType "disk"}}💿 Disk{{else if eq $alertType "cpu"}}🖥️ CPU{{else if eq $alertType "memory"}}💾 Memory{{else if eq $alertType "container"}}🐳 Container{{else}}🚨 System{{end}} - {{ .Labels.instance }}
+**Status:** ✅ RESOLVED
+**Time:** {{ .StartsAt }}
+
+{{end}}
+{{end}}
+
+🔗 **Alertmanager:** {{.ExternalURL}}
+{{ end }}
+
+{{ define "discord.default.title" }}{{template "__discord_proxy_subject" .}}{{ end }}

@@ -69,7 +69,27 @@ echo
 
 sleep 2
 
-# Teste 7: Health Check
+# Teste 7: Container DOWN
+echo "🚨 Testando alerta de CONTAINER DOWN..."
+curl -X POST "$PROXY_URL" \
+  -H "Content-Type: application/json" \
+  -d @test_container_down.json \
+  -w "\nStatus: %{http_code}\n"
+echo
+
+sleep 2
+
+# Teste 8: Container UP (Resolved)
+echo "✅ Testando alerta de CONTAINER UP (Resolvido)..."
+curl -X POST "$PROXY_URL" \
+  -H "Content-Type: application/json" \
+  -d @test_container_up.json \
+  -w "\nStatus: %{http_code}\n"
+echo
+
+sleep 2
+
+# Teste 9: Health Check
 echo "🔍 Testando Health Check..."
 curl -X GET "http://localhost:5001/health" \
   -H "Content-Type: application/json" \
@@ -85,8 +105,11 @@ echo "   💾 Memória Original (26.9%) - Nível ATENÇÃO"
 echo "   🔥 Disco Crítico (95.5%) - Nível CRÍTICO"
 echo "   🚧 CPU Alerta (84.2%) - Nível ALERTA"
 echo "   ⚠️ Memória Atenção (72.3%) - Nível ATENÇÃO"
+echo "   🚨 Container DOWN - CONTAINER OFFLINE"
+echo "   ✅ Container UP - CONTAINER ONLINE"
 echo ""
 echo "Verifique seu canal do Discord para ver os alertas com diferentes:"
 echo "   • Cores baseadas no nível de severidade"
 echo "   • GIFs específicos para cada combinação"
 echo "   • Emojis indicando o nível de criticidade"
+echo "   • Tratamento especial para containers (UP/DOWN)"
