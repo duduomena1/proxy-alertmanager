@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  grafana-discord-proxy:
+    build: .
+    container_name: grafana-discord-proxy
+    ports:
+      - "5001:5001"
+    environment:
+      # Configurações da aplicação
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      - APP_PORT=5001
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+      
+      # Configurações de alertas CPU
+      - CPU_ALERT_GIF=${CPU_ALERT_GIF}
+      - CPU_COLOR_FIRING=${CPU_COLOR_FIRING:-16776960}
+      - CPU_COLOR_RESOLVED=${CPU_COLOR_RESOLVED:-65280}
+      
+      # Configurações de alertas Memória
+      - MEMORY_ALERT_GIF=${MEMORY_ALERT_GIF}
+      - MEMORY_COLOR_FIRING=${MEMORY_COLOR_FIRING:-16744192}
+      - MEMORY_COLOR_RESOLVED=${MEMORY_COLOR_RESOLVED:-65280}
+      
+      # Configurações de alertas Disco
+      - DISK_ALERT_GIF=${DISK_ALERT_GIF}
+      - DISK_COLOR_FIRING=${DISK_COLOR_FIRING:-16711680}
+      - DISK_COLOR_RESOLVED=${DISK_COLOR_RESOLVED:-65280}
+      
+      # Configurações de alertas Container
+      - CONTAINER_ALERT_GIF=${CONTAINER_ALERT_GIF}
+      - CONTAINER_COLOR_FIRING=${CONTAINER_COLOR_FIRING:-16753920}
+      - CONTAINER_COLOR_RESOLVED=${CONTAINER_COLOR_RESOLVED:-65280}
+      
+      # Configurações de alertas padrão
+      - DEFAULT_ALERT_GIF=${DEFAULT_ALERT_GIF}
+      - DEFAULT_COLOR_FIRING=${DEFAULT_COLOR_FIRING:-16711680}
+      - DEFAULT_COLOR_RESOLVED=${DEFAULT_COLOR_RESOLVED:-65280}
+    
+    restart: unless-stopped
+    networks:
+      - monitoring
+    
+    # Health check para verificar se a aplicação está funcionando
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Logs configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  monitoring:
+    driver: bridge
+
+# Para usar junto com Grafana existente:
+# version: '3.8'
+# 
+# services:
+#   grafana-discord-proxy:
+#     build: .
+#     container_name: grafana-discord-proxy
+#     ports:
+#       - "5001:5001"
+#     env_file:
+#       - .env
+#     restart: unless-stopped
+#     networks:
+#       - grafana_default  # Use a rede do Grafana existente
+# 
+# networks:
+#   grafana_default:
+#     external: true
