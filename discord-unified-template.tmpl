@@ -12,6 +12,52 @@
 {{- $mountInfo := "" -}}
 {{- $metricValue := 0.0 -}}
 
+{{/* Extração inteligente de IP/Host de múltiplas fontes */}}
+{{- $hostInfo := "unknown" -}}
+{{- $realIP := "" -}}
+{{- $prometheusSource := "unknown" -}}
+
+{{/* 1. Tenta extrair de prometheus/datasource info primeiro */}}
+{{- if .Labels.prometheus -}}
+  {{- $prometheusSource = .Labels.prometheus -}}
+{{- else if .Labels.prometheus_replica -}}
+  {{- $prometheusSource = .Labels.prometheus_replica -}}
+{{- else if .Labels.receive -}}
+  {{- $prometheusSource = .Labels.receive -}}
+{{- end -}}
+
+{{/* 2. Busca o IP real em múltiplas fontes priorizadas */}}
+{{- if .Labels.__address__ -}}
+  {{/* __address__ tem o IP original antes do relabeling */}}
+  {{- $hostInfo = .Labels.__address__ -}}
+  {{- if match "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+:" .Labels.__address__ -}}
+    {{- $realIP = reReplaceAll "^([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+):.*" "$1" .Labels.__address__ -}}
+  {{- end -}}
+{{- else if and (.Labels.instance) (ne .Labels.instance "N/A") -}}
+  {{- $hostInfo = .Labels.instance -}}
+  {{/* Extrair IP se no formato IP:porta */}}
+  {{- if match "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+:" .Labels.instance -}}
+    {{- $realIP = reReplaceAll "^([0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+):.*" "$1" .Labels.instance -}}
+  {{/* Se não é IP direto, mas tem porta, remove apenas a porta */}}
+  {{- else if contains ":" .Labels.instance -}}
+    {{- $hostInfo = reReplaceAll "^([^:]+):.*" "$1" .Labels.instance -}}
+  {{- end -}}
+{{- end -}}
+{{/* Fallbacks para containers e outros casos */}}
+{{- if eq $hostInfo "unknown" -}}
+  {{- if .Labels.node_name -}}{{- $hostInfo = .Labels.node_name -}}
+  {{- else if .Labels.kubernetes_node -}}{{- $hostInfo = .Labels.kubernetes_node -}}
+  {{- else if .Labels.host -}}{{- $hostInfo = .Labels.host -}}
+  {{- else if .Labels.server -}}{{- $hostInfo = .Labels.server -}}
+  {{- else if .Labels.node -}}{{- $hostInfo = .Labels.node -}}
+  {{- else if .Labels.hostname -}}{{- $hostInfo = .Labels.hostname -}}
+  {{- else if .Labels.docker_host -}}{{- $hostInfo = .Labels.docker_host -}}
+  {{- else if .Labels.container_host -}}{{- $hostInfo = .Labels.container_host -}}
+  {{- else if .Labels.__address__ -}}{{- $hostInfo = .Labels.__address__ -}}
+  {{- else if .Labels.target -}}{{- $hostInfo = .Labels.target -}}
+  {{- end -}}
+{{- end -}}
+
 {{/* Detectar tipo de alerta pelos labels */}}
 {{- if .Labels.device -}}
   {{- $alertType = "disk" -}}
@@ -26,16 +72,57 @@
   {{- $alertType = "memory" -}}
 {{- end -}}
 
-{{/* Extrair valor da métrica */}}
+{{/* Extrair valor da métrica - múltiplas tentativas */}}
 {{- if .Values -}}
   {{- range $k, $v := .Values -}}
     {{- if eq $k "A" -}}{{- $metricValue = $v -}}{{- end -}}
   {{- end -}}
+  {{/* Se não encontrou A, tenta outras chaves */}}
+  {{- if eq $metricValue 0.0 -}}
+    {{- range $k, $v := .Values -}}
+      {{- if or (eq $k "B") (eq $k "C") (eq $k "D") -}}{{- $metricValue = $v -}}{{- break -}}{{- end -}}
+    {{- end -}}
+  {{- end -}}
+  {{/* Se ainda zero, pega o primeiro valor não-zero */}}
+  {{- if eq $metricValue 0.0 -}}
+    {{- range $k, $v := .Values -}}
+      {{- if gt $v 0.0 -}}{{- $metricValue = $v -}}{{- break -}}{{- end -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{/* Fallback MELHORADO: extrair do ValueString quando Values é null */}}
+{{- if and (eq $metricValue 0.0) (.ValueString) -}}
+  {{/* Procura especificamente por "value=número" que é o padrão do Grafana */}}
+  {{- if match "value=[0-9]+\\.?[0-9]*" .ValueString -}}
+    {{- $extracted := reReplaceAll ".*value=([0-9]+\\.?[0-9]*).*" "$1" .ValueString -}}
+    {{- $metricValue = float64 $extracted -}}
+  {{/* Fallback secundário: primeiro número encontrado */}}
+  {{- else if match "[0-9]+\\.?[0-9]*" .ValueString -}}
+    {{- $extracted := reReplaceAll ".*?([0-9]+\\.?[0-9]*).*" "$1" .ValueString -}}
+    {{- $metricValue = float64 $extracted -}}
+  {{- end -}}
 {{- end -}}
 
-alertname: {{if eq $alertType "disk"}}Disk Alert - {{ .Labels.instance }}{{else if eq $alertType "cpu"}}CPU Alert - {{ .Labels.instance }}{{else if eq $alertType "memory"}}Memory Alert - {{ .Labels.instance }}{{else if eq $alertType "container"}}Container Alert - {{ $containerInfo }}{{else}}System Alert - {{ .Labels.instance }}{{end}}
-instance: {{ .Labels.instance | default "unknown" }}
+alertname: {{if eq $alertType "disk"}}Disk Alert - {{ if ne $realIP "" }}{{ $realIP }}{{ else }}{{ $hostInfo }}{{ end }}{{else if eq $alertType "cpu"}}CPU Alert - {{ if ne $realIP "" }}{{ $realIP }}{{ else }}{{ $hostInfo }}{{ end }}{{else if eq $alertType "memory"}}Memory Alert - {{ if ne $realIP "" }}{{ $realIP }}{{ else }}{{ $hostInfo }}{{ end }}{{else if eq $alertType "container"}}Container Alert - {{ $containerInfo }}{{else}}System Alert - {{ if ne $realIP "" }}{{ $realIP }}{{ else }}{{ $hostInfo }}{{ end }}{{end}}
+instance: {{ $hostInfo }}
+{{- if ne $realIP "" }}
+real_ip: {{ $realIP }}
+{{- end }}
+{{- if ne $prometheusSource "unknown" }}
+prometheus_source: {{ $prometheusSource }}
+{{- end }}
 job: {{ .Labels.job | default "unknown" }}
+{{/* Informações extras de origem */}}
+datasource_info:
+  original_address: {{ .Labels.__address__ | default "not_available" }}
+  scrape_instance: {{ .Labels.instance | default "not_available" }}
+  prometheus_server: {{ $prometheusSource }}
+{{- if .Labels.prometheus_server }}
+prometheus_source: {{ .Labels.prometheus_server }}
+{{- end }}
+{{- if .Labels.scrape_job }}
+scrape_job: {{ .Labels.scrape_job }}
+{{- end }}
 {{- if eq $alertType "disk" }}
 device: {{ $deviceInfo }}
 mountpoint: {{ $mountInfo }}
@@ -46,11 +133,40 @@ container: {{ $containerInfo }}
 {{- end }}
 severity: {{if eq $alertType "container"}}{{if eq .Status "firing"}}container_down{{else}}container_up{{end}}{{else}}{{if ge $metricValue 90.0}}high{{else if ge $metricValue 80.0}}medium{{else}}low{{end}}{{end}}
 alert_type: {{ $alertType }}
-description: {{if eq $alertType "disk"}}Disk usage is {{ printf "%.1f" $metricValue }}% on device {{ $deviceInfo }} ({{ $mountInfo }}) at server {{ .Labels.instance }}. {{ if ge $metricValue 90.0 }}Critical level - immediate action required.{{ else if ge $metricValue 80.0 }}High usage detected - monitoring required.{{ else }}Disk space monitoring active.{{ end }}{{else if eq $alertType "cpu"}}CPU usage is {{ printf "%.1f" $metricValue }}% on server {{ .Labels.instance }}. {{ if ge $metricValue 90.0 }}Critical processor load affecting performance.{{ else if ge $metricValue 80.0 }}High CPU load detected.{{ else }}CPU monitoring active.{{ end }}{{else if eq $alertType "memory"}}Memory usage is {{ printf "%.1f" $metricValue }}% on server {{ .Labels.instance }}. {{ if ge $metricValue 90.0 }}Critical memory usage - system may become unstable.{{ else if ge $metricValue 80.0 }}High memory usage detected.{{ else }}Memory monitoring active.{{ end }}{{else if eq $alertType "container"}}Container {{ $containerInfo }} is {{ if eq .Status "firing" }}DOWN{{ else }}UP{{ end }} on server {{ .Labels.instance }}. {{ if eq .Status "firing" }}Service requires immediate attention.{{ else }}Service has recovered successfully.{{ end }}{{else}}System monitoring alert on {{ .Labels.instance }}. Value: {{ printf "%.1f" $metricValue }}{{ end }}
-summary: {{if eq $alertType "disk"}}Disk Alert - {{ .Labels.instance }} device {{ $deviceInfo }} ({{ printf "%.1f" $metricValue }}%){{else if eq $alertType "cpu"}}CPU Alert - {{ .Labels.instance }} ({{ printf "%.1f" $metricValue }}%){{else if eq $alertType "memory"}}Memory Alert - {{ .Labels.instance }} ({{ printf "%.1f" $metricValue }}%){{else if eq $alertType "container"}}Container {{ if eq .Status "firing" }}DOWN{{ else }}UP{{ end }} - {{ $containerInfo }} on {{ .Labels.instance }}{{else}}System Alert - {{ .Labels.instance }}{{end}}
-values_A: {{ $metricValue }}
+description: {{if eq $alertType "disk"}}Disk usage is {{ printf "%.1f" $metricValue }}% on device {{ $deviceInfo }} ({{ $mountInfo }}) at server {{ $hostInfo }}. {{ if ge $metricValue 90.0 }}Critical level - immediate action required.{{ else if ge $metricValue 80.0 }}High usage detected - monitoring required.{{ else }}Disk space monitoring active.{{ end }}{{else if eq $alertType "cpu"}}CPU usage is {{ printf "%.1f" $metricValue }}% on server {{ $hostInfo }}. {{ if ge $metricValue 90.0 }}Critical processor load affecting performance.{{ else if ge $metricValue 80.0 }}High CPU load detected.{{ else }}CPU monitoring active.{{ end }}{{else if eq $alertType "memory"}}Memory usage is {{ printf "%.1f" $metricValue }}% on server {{ $hostInfo }}. {{ if ge $metricValue 90.0 }}Critical memory usage - system may become unstable.{{ else if ge $metricValue 80.0 }}High memory usage detected.{{ else }}Memory monitoring active.{{ end }}{{else if eq $alertType "container"}}Container {{ $containerInfo }} is {{ if eq .Status "firing" }}DOWN{{ else }}UP{{ end }} on server {{ $hostInfo }}. {{ if eq .Status "firing" }}Service requires immediate attention.{{ else }}Service has recovered successfully.{{ end }}{{else}}System monitoring alert on {{ $hostInfo }}. Value: {{ printf "%.1f" $metricValue }}{{ end }}
+summary: {{if eq $alertType "disk"}}Disk Alert - {{ $hostInfo }} device {{ $deviceInfo }} ({{ printf "%.1f" $metricValue }}%){{else if eq $alertType "cpu"}}CPU Alert - {{ $hostInfo }} ({{ printf "%.1f" $metricValue }}%){{else if eq $alertType "memory"}}Memory Alert - {{ $hostInfo }} ({{ printf "%.1f" $metricValue }}%){{else if eq $alertType "container"}}Container {{ if eq .Status "firing" }}DOWN{{ else }}UP{{ end }} - {{ $containerInfo }} on {{ $hostInfo }}{{else}}System Alert - {{ $hostInfo }}{{end}}
+metric_value: {{ $metricValue }}
+{{- if .Values }}
+all_values:
+{{- range $k, $v := .Values }}
+  {{ $k }}: {{ $v }}
+{{- end }}
+{{- end }}
+{{- if .ValueString }}
+value_string: {{ .ValueString }}
+{{- end }}
 startsAt: {{ .StartsAt }}
 status: {{ .Status }}
+{{/* Debug - Labels importantes para troubleshoot */}}
+debug_labels:
+{{- if .Labels.prometheus }}
+  prometheus: {{ .Labels.prometheus }}
+{{- end }}
+{{- if .Labels.prometheus_replica }}
+  prometheus_replica: {{ .Labels.prometheus_replica }}
+{{- end }}
+{{- if .Labels.receive }}
+  prometheus_receive: {{ .Labels.receive }}
+{{- end }}
+{{- if .Labels.__address__ }}
+  original_address: {{ .Labels.__address__ }}
+{{- end }}
+{{- if .Labels.__name__ }}
+  metric_name: {{ .Labels.__name__ }}
+{{- end }}
+{{- if .Labels.grafana_folder }}
+  grafana_folder: {{ .Labels.grafana_folder }}
+{{- end }}
 ---
 {{end}}{{ end }}
 

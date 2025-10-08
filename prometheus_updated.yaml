@@ -1,0 +1,100 @@
+---
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['{{ ansible_host }}:9090']
+    # Adiciona contexto de origem
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: real_host
+      - source_labels: [__address__]
+        regex: '([^:]+):.*'
+        target_label: host_ip
+        replacement: '${1}'
+      - target_label: prometheus_server
+        replacement: 'prometheus-main'
+      - target_label: service_type
+        replacement: 'prometheus'
+
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['{{ ansible_host }}:9100']
+    # CONFIGURAÇÃO PRINCIPAL para resolver problema de IP
+    relabel_configs:
+      # Preserva o endereço original completo
+      - source_labels: [__address__]
+        target_label: real_host
+      # Extrai apenas o IP sem a porta
+      - source_labels: [__address__]
+        regex: '([^:]+):.*'
+        target_label: host_ip
+        replacement: '${1}'
+      # Identifica a fonte do Prometheus
+      - target_label: prometheus_server
+        replacement: 'prometheus-main'
+      # Adiciona contexto do serviço
+      - target_label: service_type
+        replacement: 'node-metrics'
+      # Marca o ambiente
+      - target_label: environment
+        replacement: 'production'
+    # Preserva informações após o scraping
+    metric_relabel_configs:
+      - source_labels: [instance]
+        target_label: original_instance
+
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['{{ ansible_host }}:8090']
+    # Configuração específica para containers
+    relabel_configs:
+      # Preserva IP real do host dos containers
+      - source_labels: [__address__]
+        target_label: real_host
+      - source_labels: [__address__]
+        regex: '([^:]+):.*'
+        target_label: host_ip
+        replacement: '${1}'
+      # Identifica como fonte de containers
+      - target_label: prometheus_server
+        replacement: 'prometheus-main'
+      - target_label: service_type
+        replacement: 'container-metrics'
+      - target_label: environment
+        replacement: 'production'
+    # Labels específicos para containers
+    metric_relabel_configs:
+      - source_labels: [instance]
+        target_label: original_instance
+      # Adiciona contexto de container se disponível
+      - source_labels: [container_name]
+        target_label: container
+        regex: '(.+)'
+
+  - job_name: 'docker'
+    static_configs:
+      - targets: ['{{ ansible_host }}:9323']
+    # Configuração para Docker daemon
+    relabel_configs:
+      # Preserva IP do Docker host
+      - source_labels: [__address__]
+        target_label: real_host
+      - source_labels: [__address__]
+        regex: '([^:]+):.*'
+        target_label: host_ip
+        replacement: '${1}'
+      # Identifica fonte
+      - target_label: prometheus_server
+        replacement: 'prometheus-main'
+      - target_label: service_type
+        replacement: 'docker-metrics'
+      - target_label: environment
+        replacement: 'production'
+    metric_relabel_configs:
+      - source_labels: [instance]
+        target_label: original_instance
+

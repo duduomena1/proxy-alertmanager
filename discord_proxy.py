@@ -3,6 +3,7 @@ import requests
 import os
 import re
 from datetime import datetime
+import json
 
 app = Flask(__name__)
 
@@ -117,6 +118,132 @@ SEVERITY_LEVELS = {
     }
 }
 
+def extract_real_ip_and_source(labels):
+    """Extrai IP real e fonte do Prometheus usando múltiplas estratégias"""
+    
+    real_ip = None
+    prometheus_source = "unknown"
+    original_instance = labels.get('instance', 'N/A')
+    
+    # 1. Identificar fonte do Prometheus
+    if labels.get('prometheus'):
+        prometheus_source = labels['prometheus']
+    elif labels.get('prometheus_replica'):
+        prometheus_source = labels['prometheus_replica']
+    elif labels.get('receive'):
+        prometheus_source = labels['receive']
+    
+    # 2. Buscar IP real em ordem de prioridade
+    ip_candidates = [
+        labels.get('__address__'),        # IP original antes do relabeling
+        labels.get('instance'),           # Instance atual
+        labels.get('kubernetes_node'),    # Node do K8s
+        labels.get('node_name'),          # Nome do node
+        labels.get('host'),               # Host label
+        labels.get('hostname'),           # Hostname
+        labels.get('target')              # Target do scrape
+    ]
+    
+    for candidate in ip_candidates:
+        if candidate and candidate != 'N/A':
+            # Extrair IP se estiver no formato IP:porta
+            ip_match = re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', candidate)
+            if ip_match:
+                real_ip = ip_match.group(1)
+                break
+            # Se não é IP, mas é um hostname válido, mantém
+            elif not candidate.startswith('node-exporter') and ':' in candidate:
+                # Remove porta se houver
+                real_ip = candidate.split(':')[0]
+                break
+    
+    return {
+        'real_ip': real_ip,
+        'prometheus_source': prometheus_source,
+        'original_instance': original_instance,
+        'clean_host': real_ip if real_ip else original_instance.split(':')[0] if ':' in original_instance else original_instance
+    }
+
+def extract_metric_value_enhanced(values, value_string):
+    """Extrai valor de métrica com fallback aprimorado para valueString"""
+    
+    # Primeiro tenta extrair dos values
+    if values and isinstance(values, dict):
+        # Prioridade: A, C, B, D, qualquer outro
+        for key in ['A', 'C', 'B', 'D']:
+            if key in values and values[key] is not None:
+                try:
+                    return float(values[key])
+                except (ValueError, TypeError):
+                    continue
+        
+        # Se não encontrou nas chaves prioritárias, pega qualquer valor válido
+        for key, value in values.items():
+            if value is not None:
+                try:
+                    return float(value)
+                except (ValueError, TypeError):
+                    continue
+    
+    # Fallback: extrair do valueString
+    if value_string:
+        try:
+            # Padrão específico do Grafana: "value=16.002551672152055"
+            value_match = re.search(r'value=([0-9]*\.?[0-9]+)', str(value_string))
+            if value_match:
+                return float(value_match.group(1))
+            
+            # Fallback: qualquer número decimal
+            number_match = re.search(r'([0-9]*\.?[0-9]+)', str(value_string))
+            if number_match:
+                return float(number_match.group(1))
+                
+        except (ValueError, AttributeError):
+            pass
+    
+    return 0.0
+
+def enrich_alert_data(alert_data):
+    """Enriquece dados do alerta com informações adicionais para melhor rastreamento"""
+    
+    for alert in alert_data.get('alerts', []):
+        labels = alert.get('labels', {})
+        
+        # Extrai informações de IP e origem
+        ip_info = extract_real_ip_and_source(labels)
+        
+        # Adiciona ao alert para uso posterior
+        alert['enriched_data'] = {
+            'real_ip': ip_info['real_ip'],
+            'prometheus_source': ip_info['prometheus_source'],
+            'original_instance': ip_info['original_instance'],
+            'clean_host': ip_info['clean_host'],
+            'timestamp_processed': datetime.now().isoformat()
+        }
+        
+        # Para containers, adicionar contexto extra
+        if is_container_alert(labels):
+            alert['enriched_data']['container_context'] = {
+                'container_name': labels.get('container', labels.get('container_name', labels.get('job'))),
+                'namespace': labels.get('namespace', 'default'),
+                'pod': labels.get('pod'),
+                'service': labels.get('service')
+            }
+    
+    return alert_data
+
+def is_container_alert(labels):
+    """Verifica se é um alerta relacionado a container"""
+    container_indicators = [
+        labels.get('container'),
+        labels.get('container_name'),
+        'container' in labels.get('job', '').lower(),
+        'docker' in labels.get('job', '').lower(),
+        'pod' in labels.get('job', '').lower(),
+        labels.get('pod')
+    ]
+    return any(indicator for indicator in container_indicators)
+
 def get_severity_level(metric_value, alert_type="default"):
     """Determina o nível de severidade baseado no valor da métrica"""
     
@@ -214,46 +341,43 @@ def format_timestamp(timestamp_str):
     except:
         return timestamp_str
 
-def get_metric_value(values):
-    """Extrai o valor principal da métrica"""
-    if not values:
-        return 0
-    
-    # Tenta pegar o valor A primeiro, depois C, depois qualquer outro
-    if 'A' in values and values['A'] is not None:
-        return float(values['A'])
-    elif 'C' in values and values['C'] is not None:
-        return float(values['C'])
-    else:
-        # Pega o primeiro valor não nulo
-        for key, value in values.items():
-            if value is not None:
-                return float(value)
-    return 0
+def get_metric_value(values, value_string=None):
+    """Extrai o valor principal da métrica com fallback para valueString"""
+    # Usa a função aprimorada
+    return extract_metric_value_enhanced(values, value_string)
 
 def handle_grafana_alert(data):
     """Processa alertas do Grafana no novo formato"""
     
+    # ENRIQUECE os dados antes do processamento
+    enriched_data = enrich_alert_data(data)
+    
     # Processa múltiplos alertas se houver
     processed_alerts = []
     
-    for alert_data in data['alerts']:
+    for alert_data in enriched_data['alerts']:
         labels = alert_data.get('labels', {})
         annotations = alert_data.get('annotations', {})
         values = alert_data.get('values', {})
+        value_string = alert_data.get('valueString', '')
+        enriched_info = alert_data.get('enriched_data', {})
         
         # Detecta o tipo de alerta
         alertname = labels.get('alertname', 'Alerta')
         alert_type = detect_alert_type(labels, annotations, alertname)
         config = ALERT_CONFIGS.get(alert_type, ALERT_CONFIGS['default'])
         
-        # Extrai informações comuns
-        instance = labels.get('instance', 'N/A').split(':')[0] if labels.get('instance') else 'N/A'
+        # USA informações enriquecidas para melhor identificação
+        real_ip = enriched_info.get('real_ip')
+        clean_host = enriched_info.get('clean_host', 'unknown')
+        prometheus_source = enriched_info.get('prometheus_source', 'unknown')
+        
+        # Informações específicas do alerta
         device = labels.get('device', labels.get('container', labels.get('job', 'N/A')))
         mountpoint = labels.get('mountpoint', '/')
         
-        # Pega o valor da métrica
-        metric_value = get_metric_value(values)
+        # EXTRAI valor com fallback aprimorado
+        metric_value = get_metric_value(values, value_string)
         
         # Extrai descrição
         description = annotations.get('description', '').replace('"', '').strip()
@@ -278,7 +402,8 @@ def handle_grafana_alert(data):
             content = f"""{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}
 
 **Nível:** `{severity_config['label']}`
-**Servidor:** `{instance}`
+**Servidor:** `{real_ip if real_ip else clean_host}`
+**Prometheus:** `{prometheus_source}`
 **Dispositivo:** `{device}`
 **Ponto de montagem:** `{mountpoint}`
 **Uso atual:** `{metric_value:.1f}{config['unit']}`
@@ -291,7 +416,8 @@ def handle_grafana_alert(data):
             content = f"""{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}
 
 **Nível:** `{severity_config['label']}`
-**Servidor:** `{instance}`
+**Servidor:** `{real_ip if real_ip else clean_host}`
+**Prometheus:** `{prometheus_source}`
 **Uso atual:** `{metric_value:.1f}{config['unit']}`
 
 **Descrição:** {description}
@@ -302,7 +428,8 @@ def handle_grafana_alert(data):
             content = f"""{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}
 
 **Nível:** `{severity_config['label']}`
-**Servidor:** `{instance}`
+**Servidor:** `{real_ip if real_ip else clean_host}`
+**Prometheus:** `{prometheus_source}`
 **Uso atual:** `{metric_value:.1f}{config['unit']}`
 
 **Descrição:** {description}
@@ -311,12 +438,15 @@ def handle_grafana_alert(data):
             
         elif alert_type == 'container':
             container_status = "🟢 RODANDO" if metric_value == 1 else "🔴 PARADO"
+            container_info = enriched_info.get('container_context', {})
             content = f"""{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}
 
 **Status:** `{severity_config['label']}`
-**Servidor:** `{instance}`
+**Servidor:** `{real_ip if real_ip else clean_host}`
+**Prometheus:** `{prometheus_source}`
 **Container:** `{device}`
 **Estado:** {container_status}
+**Namespace:** `{container_info.get('namespace', 'N/A')}`
 
 **Descrição:** {description}
 **Status do Alerta:** {alert_status.upper()}
@@ -326,7 +456,8 @@ def handle_grafana_alert(data):
             content = f"""{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}
 
 **Nível:** `{severity_config['label']}`
-**Servidor:** `{instance}`
+**Servidor:** `{real_ip if real_ip else clean_host}`
+**Prometheus:** `{prometheus_source}`
 **Componente:** `{device}`
 **Valor:** `{metric_value:.1f}{config['unit']}`
 
