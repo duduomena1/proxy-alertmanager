@@ -207,6 +207,50 @@ def extract_metric_value_enhanced(values, value_string):
     
     return 0.0
 
+def extract_container_info(labels):
+    """Extrai informações específicas de containers de forma mais robusta"""
+    
+    # Extrai nome do container de múltiplas fontes possíveis
+    container_name = None
+    container_sources = [
+        labels.get('container'),
+        labels.get('container_name'),
+        labels.get('pod'),
+        labels.get('pod_name'),
+        labels.get('name'),
+        labels.get('id'),  # Container ID
+    ]
+    
+    for source in container_sources:
+        if source and source != 'POD' and source not in ['', 'N/A']:
+            container_name = source
+            break
+    
+    # Se não encontrou, tenta extrair do job
+    if not container_name:
+        job = labels.get('job', '')
+        if 'container' in job.lower():
+            container_name = job
+    
+    # Extrai informações do ambiente (Kubernetes, Docker, etc.)
+    namespace = labels.get('namespace', labels.get('kube_namespace', 'default'))
+    node = labels.get('node', labels.get('kubernetes_node', labels.get('node_name')))
+    service = labels.get('service', labels.get('kubernetes_service'))
+    
+    # Informações específicas do container
+    image = labels.get('image', labels.get('container_image'))
+    
+    return {
+        'container_name': container_name or 'Container Desconhecido',
+        'namespace': namespace,
+        'pod': labels.get('pod'),
+        'service': service,
+        'node': node,
+        'image': image,
+        'job': labels.get('job'),
+        'instance_type': 'Kubernetes Pod' if labels.get('pod') else 'Docker Container'
+    }
+
 def enrich_alert_data(alert_data):
     """Enriquece dados do alerta com informações adicionais para melhor rastreamento"""
     
@@ -227,26 +271,47 @@ def enrich_alert_data(alert_data):
         
         # Para containers, adicionar contexto extra
         if is_container_alert(labels):
-            alert['enriched_data']['container_context'] = {
-                'container_name': labels.get('container', labels.get('container_name', labels.get('job'))),
-                'namespace': labels.get('namespace', 'default'),
-                'pod': labels.get('pod'),
-                'service': labels.get('service')
-            }
+            alert['enriched_data']['container_context'] = extract_container_info(labels)
     
     return alert_data
 
 def is_container_alert(labels):
-    """Verifica se é um alerta relacionado a container"""
+    """Verifica se é um alerta relacionado a container com critérios mais específicos"""
+    
+    # Critérios específicos para containers
     container_indicators = [
+        # Labels diretos de container
         labels.get('container'),
         labels.get('container_name'),
+        labels.get('pod'),
+        labels.get('pod_name'),
+        
+        # Service types específicos
+        'container' in labels.get('service_type', '').lower(),
+        'docker' in labels.get('service_type', '').lower(),
+        
+        # Job names que indicam containers
         'container' in labels.get('job', '').lower(),
         'docker' in labels.get('job', '').lower(),
-        'pod' in labels.get('job', '').lower(),
-        labels.get('pod')
+        'cadvisor' in labels.get('job', '').lower(),
+        'kubelet' in labels.get('job', '').lower(),
+        
+        # Métricas típicas de containers
+        labels.get('__name__', '').startswith('container_'),
+        'container_up' in labels.get('__name__', ''),
+        'up{job=~".*container.*"}' in str(labels),
     ]
-    return any(indicator for indicator in container_indicators)
+    
+    # Verifica alertnames específicos de containers
+    alertname = labels.get('alertname', '').lower()
+    container_alertnames = [
+        'container' in alertname,
+        'containerdown' in alertname.replace(' ', '').replace('_', '').replace('-', ''),
+        'poddown' in alertname.replace(' ', '').replace('_', '').replace('-', ''),
+        'dockerdown' in alertname.replace(' ', '').replace('_', '').replace('-', ''),
+    ]
+    
+    return any(container_indicators) or any(container_alertnames)
 
 def get_severity_level(metric_value, alert_type="default"):
     """Determina o nível de severidade baseado no valor da métrica"""
@@ -312,12 +377,16 @@ def alert():
         return f'Error: {str(e)}', 500
 
 def detect_alert_type(labels, annotations, alertname):
-    """Detecta o tipo de alerta baseado nos dados recebidos"""
+    """Detecta o tipo de alerta baseado nos dados recebidos com maior precisão"""
     alertname_lower = alertname.lower()
     description_lower = annotations.get('description', '').lower()
     service_type = labels.get('service_type', '').lower()
     
-    # Prioridade 1: Verifica pelo service_type do Prometheus
+    # Prioridade 1: Usa a função específica para containers primeiro
+    if is_container_alert(labels):
+        return 'container'
+    
+    # Prioridade 2: Verifica pelo service_type do Prometheus
     if 'postgres' in service_type:
         return 'default'  # PostgreSQL pode ter alertas específicos futuramente
     elif 'container' in service_type or 'docker' in service_type:
@@ -331,7 +400,7 @@ def detect_alert_type(labels, annotations, alertname):
         elif any(keyword in alertname_lower for keyword in ['cpu', 'processor', 'load']):
             return 'cpu'
     
-    # Prioridade 2: Verifica por palavras-chave específicas no alertname
+    # Prioridade 3: Verifica por palavras-chave específicas no alertname
     if any(keyword in alertname_lower for keyword in ['cpu', 'processor', 'load']):
         return 'cpu'
     elif any(keyword in alertname_lower for keyword in ['memory', 'mem', 'ram']):
@@ -341,15 +410,127 @@ def detect_alert_type(labels, annotations, alertname):
     elif any(keyword in alertname_lower for keyword in ['container', 'docker', 'pod']):
         return 'container'
     
-    # Prioridade 3: Verifica na descrição
+    # Prioridade 4: Verifica na descrição
     elif 'cpu' in description_lower:
         return 'cpu'
     elif any(keyword in description_lower for keyword in ['memory', 'mem', 'ram']):
         return 'memory'
     elif any(keyword in description_lower for keyword in ['disk', 'disco']):
         return 'disk'
+    elif any(keyword in description_lower for keyword in ['container', 'docker', 'pod']):
+        return 'container'
     
     return 'default'
+
+def validate_container_alert_data(alert_data, enriched_info, labels):
+    """Valida e sanitiza dados de alertas de container para maior segurança"""
+    
+    container_info = enriched_info.get('container_context', {})
+    
+    # Validações críticas
+    validation_errors = []
+    warnings = []
+    
+    # 1. Verifica se temos informações mínimas necessárias
+    if not container_info.get('container_name') or container_info.get('container_name') == 'Container Desconhecido':
+        warnings.append("Nome do container não identificado claramente")
+    
+    # 2. Verifica se o IP foi extraído corretamente
+    real_ip = enriched_info.get('real_ip')
+    if not real_ip or real_ip == 'unknown':
+        warnings.append("IP do servidor não identificado")
+    
+    # 3. Verifica se a métrica faz sentido para containers
+    values = alert_data.get('values', {})
+    metric_value = get_metric_value(values, alert_data.get('valueString', ''))
+    
+    if metric_value not in [0, 1] and metric_value not in [0.0, 1.0]:
+        validation_errors.append(f"Valor de métrica inválido para container: {metric_value}")
+    
+    # 4. Verifica se o alerta realmente é de container
+    if not is_container_alert(labels):
+        validation_errors.append("Alerta classificado como container mas não possui indicadores de container")
+    
+    return {
+        'is_valid': len(validation_errors) == 0,
+        'errors': validation_errors,
+        'warnings': warnings,
+        'container_info': container_info,
+        'metric_value': metric_value
+    }
+
+def format_container_alert(alert_data, enriched_info, labels, values, alert_status, description, severity_config):
+    """Formata alerta de container com validações de segurança"""
+    
+    # VALIDAÇÃO DE SEGURANÇA PARA CONTAINERS
+    validation_result = validate_container_alert_data(alert_data, enriched_info, labels)
+    
+    real_ip = enriched_info.get('real_ip')
+    clean_host = enriched_info.get('clean_host', 'unknown')
+    prometheus_source = enriched_info.get('prometheus_source', 'unknown')
+    
+    if not validation_result['is_valid']:
+        # Se houver erros críticos, trata como alerta padrão com aviso
+        error_msg = "; ".join(validation_result['errors'])
+        return f"""⚠️ **ALERTA DE CONTAINER - VALIDAÇÃO FALHOU**
+
+**❌ ERROS DE VALIDAÇÃO:** {error_msg}
+**Servidor:** `{real_ip if real_ip else clean_host}`
+**Descrição Original:** {description}
+**Status:** {alert_status.upper()}
+
+**ℹ️ Dados brutos disponíveis para debug:**
+```
+Labels: {json.dumps(labels, indent=2)}
+Values: {json.dumps(values, indent=2)}
+```"""
+    
+    container_info = validation_result['container_info']
+    container_name = container_info.get('container_name', 'Container Desconhecido')
+    validated_metric_value = validation_result['metric_value']
+    
+    # Determina status mais preciso
+    if validated_metric_value == 0:
+        container_status = "🔴 **OFFLINE/PARADO**"
+        status_icon = "🚨"
+    elif validated_metric_value == 1:
+        container_status = "🟢 **ONLINE/RODANDO**"
+        status_icon = "✅"
+    else:
+        container_status = f"⚠️ **STATUS DESCONHECIDO** (valor: {validated_metric_value})"
+        status_icon = "⚠️"
+    
+    # Informações de localização mais claras
+    server_info = f"`{real_ip}`" if real_ip else f"`{clean_host}`"
+    if container_info.get('node'):
+        server_info += f" (Node: `{container_info.get('node')}`)"
+    
+    # Adiciona warnings se houver
+    warning_section = ""
+    if validation_result['warnings']:
+        warning_section = f"\n**⚠️ AVISOS:** {'; '.join(validation_result['warnings'])}\n"
+    
+    return f"""{status_icon} **ALERTA DE CONTAINER** {severity_config['emoji']}
+
+**🏷️ IDENTIFICAÇÃO**
+**Container:** `{container_name}`
+**Servidor/Host:** {server_info}
+**Prometheus:** `{prometheus_source}`
+
+**📊 STATUS ATUAL**
+**Estado:** {container_status}
+**Tipo:** `{container_info.get('instance_type', 'Container')}`
+**Namespace:** `{container_info.get('namespace', 'N/A')}`
+
+**🔍 DETALHES TÉCNICOS**
+**Job:** `{container_info.get('job', 'N/A')}`
+**Service:** `{container_info.get('service', 'N/A')}`
+**Image:** `{container_info.get('image', 'N/A')}`{warning_section}
+
+**📝 INFORMAÇÕES DO ALERTA**
+**Descrição:** {description}
+**Status do Alerta:** `{alert_status.upper()}`
+**Timestamp:** `{format_timestamp(alert_data.get('startsAt', 'N/A'))}`"""
 
 def format_timestamp(timestamp_str):
     """Formata timestamp para formato brasileiro"""
@@ -458,20 +639,46 @@ def handle_grafana_alert(data):
 **Hora:** {format_timestamp(alert_data.get('startsAt', 'N/A'))}"""
             
         elif alert_type == 'container':
-            container_status = "🟢 RODANDO" if metric_value == 1 else "🔴 PARADO"
-            container_info = enriched_info.get('container_context', {})
-            content = f"""{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}
+            # Usa a nova função dedicada para alertas de container
+            content = format_container_alert(alert_data, enriched_info, labels, values, alert_status, description, severity_config)
+            
+            # Determina status mais preciso
+            if metric_value == 0:
+                container_status = "� **OFFLINE/PARADO**"
+                status_icon = "🚨"
+            elif metric_value == 1:
+                container_status = "� **ONLINE/RODANDO**"
+                status_icon = "✅"
+            else:
+                container_status = f"⚠️ **STATUS DESCONHECIDO** (valor: {metric_value})"
+                status_icon = "⚠️"
+            
+            # Informações de localização mais claras
+            server_info = f"`{real_ip}`" if real_ip else f"`{clean_host}`"
+            if container_info.get('node'):
+                server_info += f" (Node: `{container_info.get('node')}`)"
+            
+            content = f"""{status_icon} **ALERTA DE CONTAINER** {severity_config['emoji']}
 
-**Status:** `{severity_config['label']}`
-**Servidor:** `{real_ip if real_ip else clean_host}`
+**🏷️ IDENTIFICAÇÃO**
+**Container:** `{container_name}`
+**Servidor/Host:** {server_info}
 **Prometheus:** `{prometheus_source}`
-**Container:** `{device}`
+
+**📊 STATUS ATUAL**
 **Estado:** {container_status}
+**Tipo:** `{container_info.get('instance_type', 'Container')}`
 **Namespace:** `{container_info.get('namespace', 'N/A')}`
 
+**🔍 DETALHES TÉCNICOS**
+**Job:** `{container_info.get('job', 'N/A')}`
+**Service:** `{container_info.get('service', 'N/A')}`
+**Image:** `{container_info.get('image', 'N/A')}`
+
+**📝 INFORMAÇÕES DO ALERTA**
 **Descrição:** {description}
-**Status do Alerta:** {alert_status.upper()}
-**Hora:** {format_timestamp(alert_data.get('startsAt', 'N/A'))}"""
+**Status do Alerta:** `{alert_status.upper()}`
+**Timestamp:** `{format_timestamp(alert_data.get('startsAt', 'N/A'))}`"""
             
         else:  # default
             content = f"""{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}
@@ -500,10 +707,22 @@ def handle_grafana_alert(data):
         
         # Campo de métricas específico por tipo
         if alert_type == 'container':
+            container_info = alert_data.get('enriched_data', {}).get('container_context', {})
+            container_name = container_info.get('container_name', device)
             container_status = "RODANDO" if metric_value == 1 else "PARADO"
+            
             embed["fields"].append({
-                "name": "🐳 Status do Container",
-                "value": f"**Estado:** {container_status}\n**Container:** {device}",
+                "name": "🐳 Container Info",
+                "value": f"**Nome:** {container_name}\n**Estado:** {container_status}\n**Tipo:** {container_info.get('instance_type', 'Container')}",
+                "inline": True
+            })
+            
+            # Campo adicional com localização
+            server_location = real_ip if real_ip else clean_host
+            node_info = container_info.get('node', 'N/A')
+            embed["fields"].append({
+                "name": "🌐 Localização",
+                "value": f"**Host:** {server_location}\n**Node:** {node_info}\n**Namespace:** {container_info.get('namespace', 'N/A')}",
                 "inline": True
             })
         else:
