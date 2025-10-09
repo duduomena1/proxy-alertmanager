@@ -125,16 +125,20 @@ def extract_real_ip_and_source(labels):
     prometheus_source = "unknown"
     original_instance = labels.get('instance', 'N/A')
     
-    # 1. Identificar fonte do Prometheus
-    if labels.get('prometheus'):
+    # 1. Identificar fonte do Prometheus (incluindo novas tags)
+    if labels.get('prometheus_server'):
+        prometheus_source = labels['prometheus_server']
+    elif labels.get('prometheus'):
         prometheus_source = labels['prometheus']
     elif labels.get('prometheus_replica'):
         prometheus_source = labels['prometheus_replica']
     elif labels.get('receive'):
         prometheus_source = labels['receive']
     
-    # 2. Buscar IP real em ordem de prioridade
+    # 2. Buscar IP real em ordem de prioridade (incluindo novas tags do Prometheus)
     ip_candidates = [
+        labels.get('host_ip'),            # Nova tag do Prometheus atualizado
+        labels.get('real_host'),          # Nova tag do Prometheus atualizado  
         labels.get('__address__'),        # IP original antes do relabeling
         labels.get('instance'),           # Instance atual
         labels.get('kubernetes_node'),    # Node do K8s
@@ -311,8 +315,23 @@ def detect_alert_type(labels, annotations, alertname):
     """Detecta o tipo de alerta baseado nos dados recebidos"""
     alertname_lower = alertname.lower()
     description_lower = annotations.get('description', '').lower()
+    service_type = labels.get('service_type', '').lower()
     
-    # Verifica por palavras-chave específicas
+    # Prioridade 1: Verifica pelo service_type do Prometheus
+    if 'postgres' in service_type:
+        return 'default'  # PostgreSQL pode ter alertas específicos futuramente
+    elif 'container' in service_type or 'docker' in service_type:
+        return 'container'
+    elif 'node' in service_type:
+        # Para node-exporter, detecta pelo device ou nome do alerta
+        if 'device' in labels or any(keyword in alertname_lower for keyword in ['disk', 'storage', 'filesystem']):
+            return 'disk'
+        elif any(keyword in alertname_lower for keyword in ['memory', 'mem', 'ram']):
+            return 'memory'
+        elif any(keyword in alertname_lower for keyword in ['cpu', 'processor', 'load']):
+            return 'cpu'
+    
+    # Prioridade 2: Verifica por palavras-chave específicas no alertname
     if any(keyword in alertname_lower for keyword in ['cpu', 'processor', 'load']):
         return 'cpu'
     elif any(keyword in alertname_lower for keyword in ['memory', 'mem', 'ram']):
@@ -321,6 +340,8 @@ def detect_alert_type(labels, annotations, alertname):
         return 'disk'
     elif any(keyword in alertname_lower for keyword in ['container', 'docker', 'pod']):
         return 'container'
+    
+    # Prioridade 3: Verifica na descrição
     elif 'cpu' in description_lower:
         return 'cpu'
     elif any(keyword in description_lower for keyword in ['memory', 'mem', 'ram']):

@@ -1,59 +1,95 @@
 {
-  "receiver": "testes de webhook",
+"receiver": "testes de webhook",
   "status": "firing",
   "alerts": [
     {
       "status": "firing",
       "labels": {
-        "alertname": "Disk app-001 - teste no data",
-        "device": "/dev/mapper/app01--vg-root",
-        "disk": "Caution",
+        "alertname": "Disk Tatico-Candeias-80-90 - 10.2.100.13",
+        "device": "/dev/mapper/tatico--candeias--vg-root",
+        "disk": "warning",
         "fstype": "ext4",
         "grafana_folder": "Alerts",
-        "instance": "node-exporter:9100",
+        "instance": "10.2.100.13:9100",
         "job": "node-exporter",
         "mountpoint": "/"
       },
       "annotations": {
-        "summary": "TESTE TESTE TESTE TESTE TESTE"
+        "description": "\"⚠️ O uso do disco acima de  80%\"",
+        "summary": "Uso de disco alto em /"
       },
-      "startsAt": "2025-10-08T13:29:30Z",
+      "startsAt": "2025-10-09T13:47:00Z",
       "endsAt": "0001-01-01T00:00:00Z",
-      "generatorURL": "http://192.168.202.251:3000/alerting/grafana/cf0fl65egiayob/view?orgId=1",
-      "fingerprint": "5d19d4d71f0739d1",
-      "silenceURL": "http://192.168.202.251:3000/alerting/silence/new?alertmanager=grafana&matcher=__alert_rule_uid__%3Dcf0fl65egiayob&matcher=device%3D%2Fdev%2Fmapper%2Fapp01--vg-root&matcher=disk%3DCaution&matcher=fstype%3Dext4&matcher=instance%3Dnode-exporter%3A9100&matcher=job%3Dnode-exporter&matcher=mountpoint%3D%2F&orgId=1",
-      "dashboardURL": "",
-      "panelURL": "",
+      "generatorURL": "http://192.168.202.251:3000/alerting/grafana/fetp4ren3t5hca/view?orgId=1",
+      "fingerprint": "435a53f4cedcb155",
+      "silenceURL": "http://192.168.202.251:3000/alerting/silence/new?alertmanager=grafana&matcher=__alert_rule_uid__%3Dfetp4ren3t5hca&matcher=device%3D%2Fdev%2Fmapper%2Ftatico--candeias--vg-root&matcher=disk%3Dwarning&matcher=fstype%3Dext4&matcher=instance%3D10.2.100.13%3A9100&matcher=job%3Dnode-exporter&matcher=mountpoint%3D%2F&orgId=1",
+      "dashboardURL": "http://192.168.202.251:3000/d/64nrElFmk-candeias?from=1760014020000&orgId=1&to=1760019401112",
+      "panelURL": "http://192.168.202.251:3000/d/64nrElFmk-candeias?from=1760014020000&orgId=1&to=1760019401112&viewPanel=33",
       "values": {
-        "A": 16.002551672152055,
+        "A": 83.8290612701334,
         "C": 1
       },
-      "valueString": "[ var='A' labels={device=/dev/mapper/app01--vg-root, fstype=ext4, instance=node-exporter:9100, job=node-exporter, mountpoint=/} value=16.002551672152055 ], [ var='C' labels={device=/dev/mapper/app01--vg-root, fstype=ext4, instance=node-exporter:9100, job=node-exporter, mountpoint=/} value=1 ]"
+      "valueString": "[ var='A' labels={device=/dev/mapper/tatico--candeias--vg-root, fstype=ext4, instance=10.2.100.13:9100, job=node-exporter, mountpoint=/} value=83.8290612701334 ], [ var='C' labels={device=/dev/mapper/tatico--candeias--vg-root, fstype=ext4, instance=10.2.100.13:9100, job=node-exporter, mountpoint=/} value=1 ]"
+    },
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "Disk Tatico-Candeias-80-90 - 10.2.100.13",
+        "device": "/dev/mapper/tatico--candeias--vg-root",
+        "disk": "warning",
+        "environment": "production",
+        "fstype": "ext4",
+        "grafana_folder": "Alerts",
+        "host_ip": "10.2.100.13",
+        "instance": "10.2.100.13:9100",
+        "job": "node-exporter",
+        "mountpoint": "/",
+        "original_instance": "10.2.100.13:9100",
+        "prometheus_server": "prometheus-main",
+        "real_host": "10.2.100.13:9100",
+        "service_type": "node-metrics"
+      },
+      "annotations": {
+        "description": "\"⚠️ O uso do disco acima de  80%\"",
+        "summary": "Uso de disco alto em /"
+      },
+      "startsAt": "2025-10-09T14:14:20Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://192.168.202.251:3000/alerting/grafana/fetp4ren3t5hca/view?orgId=1",
+      "fingerprint": "568c8e2f3d0974f5",
+      "silenceURL": "http://192.168.202.251:3000/alerting/silence/new?alertmanager=grafana&matcher=__alert_rule_uid__%3Dfetp4ren3t5hca&matcher=device%3D%2Fdev%2Fmapper%2Ftatico--candeias--vg-root&matcher=disk%3Dwarning&matcher=environment%3Dproduction&matcher=fstype%3Dext4&matcher=host_ip%3D10.2.100.13&matcher=instance%3D10.2.100.13%3A9100&matcher=job%3Dnode-exporter&matcher=mountpoint%3D%2F&matcher=original_instance%3D10.2.100.13%3A9100&matcher=prometheus_server%3Dprometheus-main&matcher=real_host%3D10.2.100.13%3A9100&matcher=service_type%3Dnode-metrics&orgId=1",
+      "dashboardURL": "http://192.168.202.251:3000/d/64nrElFmk-candeias?from=1760015660000&orgId=1&to=1760019401112",
+      "panelURL": "http://192.168.202.251:3000/d/64nrElFmk-candeias?from=1760015660000&orgId=1&to=1760019401112&viewPanel=33",
+      "values": {
+        "A": 83.82913105722277,
+        "C": 1
+      },
+      "valueString": "[ var='A' labels={device=/dev/mapper/tatico--candeias--vg-root, environment=production, fstype=ext4, host_ip=10.2.100.13, instance=10.2.100.13:9100, job=node-exporter, mountpoint=/, original_instance=10.2.100.13:9100, prometheus_server=prometheus-main, real_host=10.2.100.13:9100, service_type=node-metrics} value=83.82913105722277 ], [ var='C' labels={device=/dev/mapper/tatico--candeias--vg-root, environment=production, fstype=ext4, host_ip=10.2.100.13, instance=10.2.100.13:9100, job=node-exporter, mountpoint=/, original_instance=10.2.100.13:9100, prometheus_server=prometheus-main, real_host=10.2.100.13:9100, service_type=node-metrics} value=1 ]"
     }
   ],
   "groupLabels": {
-    "alertname": "Disk app-001 - teste no data",
+    "alertname": "Disk Tatico-Candeias-80-90 - 10.2.100.13",
     "grafana_folder": "Alerts"
   },
   "commonLabels": {
-    "alertname": "Disk app-001 - teste no data",
-    "device": "/dev/mapper/app01--vg-root",
-    "disk": "Caution",
+    "alertname": "Disk Tatico-Candeias-80-90 - 10.2.100.13",
+    "device": "/dev/mapper/tatico--candeias--vg-root",
+    "disk": "warning",
     "fstype": "ext4",
     "grafana_folder": "Alerts",
-    "instance": "node-exporter:9100",
+    "instance": "10.2.100.13:9100",
     "job": "node-exporter",
     "mountpoint": "/"
   },
   "commonAnnotations": {
-    "summary": "TESTE TESTE TESTE TESTE TESTE"
+    "description": "\"⚠️ O uso do disco acima de  80%\"",
+    "summary": "Uso de disco alto em /"
   },
   "externalURL": "http://192.168.202.251:3000/",
   "version": "1",
-  "groupKey": "{}/{__grafana_autogenerated__=\"true\"}/{__grafana_receiver__=\"testes de webhook\"}:{alertname=\"Disk app-001 - teste no data\", grafana_folder=\"Alerts\"}",
+  "groupKey": "{}/{__grafana_autogenerated__=\"true\"}/{__grafana_receiver__=\"testes de webhook\"}:{alertname=\"Disk Tatico-Candeias-80-90 - 10.2.100.13\", grafana_folder=\"Alerts\"}",
   "truncatedAlerts": 0,
   "orgId": 1,
-  "title": "[FIRING:1] Disk app-001 - teste no data Alerts (/dev/mapper/app01--vg-root Caution ext4 node-exporter:9100 node-exporter /)",
-  "state": "alerting",
-  "message": "**Firing**\n\nValue: A=16.002551672152055, C=1\nLabels:\n - alertname = Disk app-001 - teste no data\n - device = /dev/mapper/app01--vg-root\n - disk = Caution\n - fstype = ext4\n - grafana_folder = Alerts\n - instance = node-exporter:9100\n - job = node-exporter\n - mountpoint = /\nAnnotations:\n - summary = TESTE TESTE TESTE TESTE TESTE\nSource: http://192.168.202.251:3000/alerting/grafana/cf0fl65egiayob/view?orgId=1\nSilence: http://192.168.202.251:3000/alerting/silence/new?alertmanager=grafana&matcher=__alert_rule_uid__%3Dcf0fl65egiayob&matcher=device%3D%2Fdev%2Fmapper%2Fapp01--vg-root&matcher=disk%3DCaution&matcher=fstype%3Dext4&matcher=instance%3Dnode-exporter%3A9100&matcher=job%3Dnode-exporter&matcher=mountpoint%3D%2F&orgId=1\n"
+  "title": "[FIRING:2] Disk Tatico-Candeias-80-90 - 10.2.100.13 Alerts (/dev/mapper/tatico--candeias--vg-root warning ext4 10.2.100.13:9100 node-exporter /)",
+  "state": "alerting"
 }
