@@ -119,23 +119,29 @@ SEVERITY_LEVELS = {
 }
 
 def extract_real_ip_and_source(labels):
-    """Extrai IP real e fonte do Prometheus usando múltiplas estratégias"""
+    """Extrai IP real e fonte do Prometheus usando múltiplas estratégias melhoradas"""
     
     real_ip = None
     prometheus_source = "unknown"
     original_instance = labels.get('instance', 'N/A')
     
-    # 1. Identificar fonte do Prometheus (incluindo novas tags)
-    if labels.get('prometheus_server'):
-        prometheus_source = labels['prometheus_server']
-    elif labels.get('prometheus'):
-        prometheus_source = labels['prometheus']
-    elif labels.get('prometheus_replica'):
-        prometheus_source = labels['prometheus_replica']
-    elif labels.get('receive'):
-        prometheus_source = labels['receive']
+    # 1. Identificar fonte do Prometheus (incluindo novas tags e fallbacks)
+    prometheus_candidates = [
+        labels.get('prometheus_server'),
+        labels.get('prometheus'),
+        labels.get('prometheus_replica'),
+        labels.get('receive'),
+        labels.get('exported_job'),  # Fallback adicional
+        labels.get('job', '').replace('-exporter', '').replace('node', 'prometheus').replace('cadvisor', 'prometheus'),
+        "prometheus-main"  # Fallback padrão
+    ]
     
-    # 2. Buscar IP real em ordem de prioridade (incluindo novas tags do Prometheus)
+    for candidate in prometheus_candidates:
+        if candidate and candidate not in ['', 'N/A', 'unknown']:
+            prometheus_source = candidate
+            break
+    
+    # 2. Buscar IP real em ordem de prioridade (melhorado)
     ip_candidates = [
         labels.get('host_ip'),            # Nova tag do Prometheus atualizado
         labels.get('real_host'),          # Nova tag do Prometheus atualizado  
@@ -145,21 +151,30 @@ def extract_real_ip_and_source(labels):
         labels.get('node_name'),          # Nome do node
         labels.get('host'),               # Host label
         labels.get('hostname'),           # Hostname
-        labels.get('target')              # Target do scrape
+        labels.get('target'),             # Target do scrape
+        labels.get('exported_instance'),  # Instance exportada
+        labels.get('server_name')         # Nome do servidor
     ]
     
     for candidate in ip_candidates:
-        if candidate and candidate != 'N/A':
+        if candidate and candidate not in ['N/A', '', 'localhost', '127.0.0.1']:
             # Extrair IP se estiver no formato IP:porta
-            ip_match = re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', candidate)
+            ip_match = re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', str(candidate))
             if ip_match:
                 real_ip = ip_match.group(1)
                 break
-            # Se não é IP, mas é um hostname válido, mantém
-            elif not candidate.startswith('node-exporter') and ':' in candidate:
+            # Se não é IP, mas é um hostname válido, mantém (mas remove porta)
+            elif ':' in str(candidate) and not candidate.startswith('node-exporter'):
                 # Remove porta se houver
-                real_ip = candidate.split(':')[0]
-                break
+                potential_ip = candidate.split(':')[0]
+                # Verifica se é um IP válido
+                if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', potential_ip):
+                    real_ip = potential_ip
+                    break
+                # Ou se é um hostname válido
+                elif len(potential_ip) > 3 and not potential_ip.startswith('node'):
+                    real_ip = potential_ip
+                    break
     
     return {
         'real_ip': real_ip,
@@ -696,44 +711,6 @@ def handle_grafana_alert(data):
         elif alert_type == 'container':
             # Usa a nova função dedicada para alertas de container
             content = format_container_alert(alert_data, enriched_info, labels, values, alert_status, description, severity_config)
-            
-            # Determina status mais preciso
-            if metric_value == 0:
-                container_status = "� **OFFLINE/PARADO**"
-                status_icon = "🚨"
-            elif metric_value == 1:
-                container_status = "� **ONLINE/RODANDO**"
-                status_icon = "✅"
-            else:
-                container_status = f"⚠️ **STATUS DESCONHECIDO** (valor: {metric_value})"
-                status_icon = "⚠️"
-            
-            # Informações de localização mais claras
-            server_info = f"`{real_ip}`" if real_ip else f"`{clean_host}`"
-            if container_info.get('node'):
-                server_info += f" (Node: `{container_info.get('node')}`)"
-            
-            content = f"""{status_icon} **ALERTA DE CONTAINER** {severity_config['emoji']}
-
-**🏷️ IDENTIFICAÇÃO**
-**Container:** `{container_name}`
-**Servidor/Host:** {server_info}
-**Prometheus:** `{prometheus_source}`
-
-**📊 STATUS ATUAL**
-**Estado:** {container_status}
-**Tipo:** `{container_info.get('instance_type', 'Container')}`
-**Namespace:** `{container_info.get('namespace', 'N/A')}`
-
-**🔍 DETALHES TÉCNICOS**
-**Job:** `{container_info.get('job', 'N/A')}`
-**Service:** `{container_info.get('service', 'N/A')}`
-**Image:** `{container_info.get('image', 'N/A')}`
-
-**📝 INFORMAÇÕES DO ALERTA**
-**Descrição:** {description}
-**Status do Alerta:** `{alert_status.upper()}`
-**Timestamp:** `{format_timestamp(alert_data.get('startsAt', 'N/A'))}`"""
             
         else:  # default
             content = f"""{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}
