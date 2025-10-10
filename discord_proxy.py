@@ -168,8 +168,16 @@ def extract_real_ip_and_source(labels):
         'clean_host': real_ip if real_ip else original_instance.split(':')[0] if ':' in original_instance else original_instance
     }
 
-def extract_metric_value_enhanced(values, value_string):
-    """Extrai valor de métrica com fallback aprimorado para valueString"""
+def extract_metric_value_enhanced(values, value_string, alert_type="default", debug_mode=False):
+    """Extrai valor de métrica com fallback aprimorado e debug específico por tipo"""
+    
+    if debug_mode:
+        print(f"[DEBUG] extract_metric_value_enhanced - Alert Type: {alert_type}")
+        print(f"[DEBUG] Values received: {values}")
+        print(f"[DEBUG] ValueString received: {value_string}")
+    
+    extracted_value = None
+    extraction_source = None
     
     # Primeiro tenta extrair dos values
     if values and isinstance(values, dict):
@@ -177,35 +185,81 @@ def extract_metric_value_enhanced(values, value_string):
         for key in ['A', 'C', 'B', 'D']:
             if key in values and values[key] is not None:
                 try:
-                    return float(values[key])
-                except (ValueError, TypeError):
+                    extracted_value = float(values[key])
+                    extraction_source = f"values[{key}]"
+                    if debug_mode:
+                        print(f"[DEBUG] Extracted {extracted_value} from {extraction_source}")
+                    break
+                except (ValueError, TypeError) as e:
+                    if debug_mode:
+                        print(f"[DEBUG] Failed to convert values[{key}]={values[key]}: {e}")
                     continue
         
         # Se não encontrou nas chaves prioritárias, pega qualquer valor válido
-        for key, value in values.items():
-            if value is not None:
-                try:
-                    return float(value)
-                except (ValueError, TypeError):
-                    continue
+        if extracted_value is None:
+            for key, value in values.items():
+                if value is not None:
+                    try:
+                        extracted_value = float(value)
+                        extraction_source = f"values[{key}]"
+                        if debug_mode:
+                            print(f"[DEBUG] Extracted {extracted_value} from fallback {extraction_source}")
+                        break
+                    except (ValueError, TypeError) as e:
+                        if debug_mode:
+                            print(f"[DEBUG] Failed to convert values[{key}]={value}: {e}")
+                        continue
     
     # Fallback: extrair do valueString
-    if value_string:
+    if extracted_value is None and value_string:
         try:
             # Padrão específico do Grafana: "value=16.002551672152055"
             value_match = re.search(r'value=([0-9]*\.?[0-9]+)', str(value_string))
             if value_match:
-                return float(value_match.group(1))
-            
-            # Fallback: qualquer número decimal
-            number_match = re.search(r'([0-9]*\.?[0-9]+)', str(value_string))
-            if number_match:
-                return float(number_match.group(1))
-                
-        except (ValueError, AttributeError):
-            pass
+                extracted_value = float(value_match.group(1))
+                extraction_source = "valueString(value=pattern)"
+                if debug_mode:
+                    print(f"[DEBUG] Extracted {extracted_value} from {extraction_source}")
+            else:
+                # Fallback: qualquer número decimal
+                number_match = re.search(r'([0-9]*\.?[0-9]+)', str(value_string))
+                if number_match:
+                    extracted_value = float(number_match.group(1))
+                    extraction_source = "valueString(number_pattern)"
+                    if debug_mode:
+                        print(f"[DEBUG] Extracted {extracted_value} from {extraction_source}")
+                        
+        except (ValueError, AttributeError) as e:
+            if debug_mode:
+                print(f"[DEBUG] Failed to extract from valueString: {e}")
     
-    return 0.0
+    # Se ainda não encontrou, retorna 0
+    if extracted_value is None:
+        extracted_value = 0.0
+        extraction_source = "default_fallback"
+        if debug_mode:
+            print(f"[DEBUG] No value found, using default: {extracted_value}")
+    
+    # Tratamento específico por tipo de alerta
+    if alert_type in ['cpu', 'memory', 'disk']:
+        # Para CPU, memória e disco, valores devem estar entre 0-100%
+        if extracted_value > 1 and extracted_value <= 100:
+            # Valor já está em percentual
+            pass
+        elif extracted_value > 0 and extracted_value <= 1:
+            # Valor está em fração (0-1), converte para percentual
+            extracted_value = extracted_value * 100
+            if debug_mode:
+                print(f"[DEBUG] Converted fraction to percentage: {extracted_value}%")
+        elif extracted_value > 100:
+            # Valor pode estar em uma escala diferente, tenta normalizar
+            if debug_mode:
+                print(f"[DEBUG] Value > 100%, might need normalization: {extracted_value}")
+    
+    if debug_mode:
+        print(f"[DEBUG] Final extracted value: {extracted_value} from {extraction_source}")
+    
+    return extracted_value
 
 def extract_container_info(labels):
     """Extrai informações específicas de containers de forma mais robusta"""
@@ -442,7 +496,7 @@ def validate_container_alert_data(alert_data, enriched_info, labels):
     
     # 3. Verifica se a métrica faz sentido para containers
     values = alert_data.get('values', {})
-    metric_value = get_metric_value(values, alert_data.get('valueString', ''))
+    metric_value = get_metric_value(values, alert_data.get('valueString', ''), 'container', True)
     
     if metric_value not in [0, 1] and metric_value not in [0.0, 1.0]:
         validation_errors.append(f"Valor de métrica inválido para container: {metric_value}")
@@ -543,10 +597,10 @@ def format_timestamp(timestamp_str):
     except:
         return timestamp_str
 
-def get_metric_value(values, value_string=None):
+def get_metric_value(values, value_string=None, alert_type="default", debug_mode=False):
     """Extrai o valor principal da métrica com fallback para valueString"""
-    # Usa a função aprimorada
-    return extract_metric_value_enhanced(values, value_string)
+    # Usa a função aprimorada com tipo de alerta e debug
+    return extract_metric_value_enhanced(values, value_string, alert_type, debug_mode)
 
 def handle_grafana_alert(data):
     """Processa alertas do Grafana no novo formato"""
@@ -578,8 +632,9 @@ def handle_grafana_alert(data):
         device = labels.get('device', labels.get('container', labels.get('job', 'N/A')))
         mountpoint = labels.get('mountpoint', '/')
         
-        # EXTRAI valor com fallback aprimorado
-        metric_value = get_metric_value(values, value_string)
+        # EXTRAI valor com fallback aprimorado e debug específico por tipo
+        debug_enabled = os.getenv("DEBUG_MODE", "False").lower() == "true"
+        metric_value = get_metric_value(values, value_string, alert_type, debug_enabled)
         
         # Extrai descrição
         description = annotations.get('description', '').replace('"', '').strip()
@@ -755,9 +810,16 @@ def handle_grafana_alert(data):
             "embeds": [alert["embed"]]
         }
         
+        if DEBUG_MODE:
+            print(f"[DEBUG] Sending {alert['type']} alert payload:")
+            print(f"[DEBUG] Content length: {len(alert['content'])}")
+            print(f"[DEBUG] Payload: {json.dumps(payload, indent=2)[:500]}...")
+        
         resp = requests.post(DISCORD_WEBHOOK_URL, json=payload)
         if DEBUG_MODE:
             print(f"[DEBUG] Sent {alert['type']} alert, status: {resp.status_code}")
+            if resp.status_code != 204:
+                print(f"[DEBUG] Response content: {resp.text}")
     
     return '', 200
 
