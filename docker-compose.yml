@@ -8,7 +8,7 @@ services:
     env_file:
       - .env
     environment:
-      - DEBUG_MODE=false
+      - DEBUG_MODE=true
       - FLASK_ENV=production
     restart: unless-stopped
     networks:

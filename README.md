@@ -1,56 +1,101 @@
 # 🚀 Grafana Discord Proxy
 
-Um proxy inteligente e personalizável para enviar alertas do Grafana para o Discord com formatação elegante e suporte a GIFs animados.
+Um proxy inteligente e avançado para enviar alertas do Grafana para o Discord com análise automatizada de containers, templates flexíveis e formatação elegante.
 
-## ✨ Características
+## ✨ Características Principais
 
-- 🎯 **Detecção Automática**: Identifica automaticamente o tipo de alerta (CPU, Memória, Disco, Container)
-- 🎨 **Personalizável**: Configure cores e GIFs específicos para cada tipo de alerta
-- 📱 **Formatação Clara**: Mensagens organizadas e fáceis de ler no Discord
-- 🐳 **Docker Ready**: Containerizado e pronto para deploy
-- 🔧 **Configuração Flexível**: Todas as configurações via variáveis de ambiente
-- 🔍 **Health Check**: Endpoint de monitoramento incluído
+- 🧠 **Análise Inteligente de Containers**: Detecta automaticamente status DOWN/UP e filtra alertas desnecessários
+- 🎯 **Duplo Endpoint**: Suporte para alertas JSON padrão (`/alert`) e templates minimalistas (`/alert_minimal`)
+- 🎨 **Templates Personalizáveis**: Templates Grafana livres de erros de função (`float64`, `regex`, etc.)
+- 📱 **Formatação Rica**: Mensagens organizadas com informações detalhadas do ambiente
+- 🐳 **Container Ready**: Análise específica para Kubernetes, Docker Swarm e containers standalone
+- 🔧 **Configuração Flexível**: Variáveis de ambiente para todas as personalizações
+- 🔍 **Debug Avançado**: Logs detalhados para troubleshooting e análise
 
 ## 🚦 Tipos de Alertas Suportados
 
-| Tipo | Emoji | Detecta por | Exemplo |
-|------|--------|-------------|---------|
-| **CPU** | 🖥️ | `cpu`, `processor`, `load` | Uso de CPU alto |
-| **Memória** | 💾 | `memory`, `mem`, `ram` | Uso de RAM alto |
-| **Disco** | 💿 | `disk`, `storage`, `filesystem` | Disco cheio |
-| **Container** | 🐳 | `container`, `docker`, `pod` | Container parado |
-| **Padrão** | 🚨 | Outros tipos | Alertas genéricos |
+| Tipo | Emoji | Detecta por | Análise Especial |
+|------|--------|-------------|------------------|
+| **CPU** | 🖥️ | `cpu`, `processor`, `load` | Extração automática de valores % |
+| **Memória** | 💾 | `memory`, `mem`, `ram` | Conversão de bytes para % |
+| **Disco** | 💿 | `disk`, `storage`, `filesystem` | Device e mountpoint detalhados |
+| **Container** | 🐳 | `container`, `docker`, `pod` | **Status inteligente DOWN/UP** |
+| **Padrão** | 🚨 | Outros tipos | Processamento genérico |
 
-## 📊 Sistema de Severidade Inteligente
+## � Sistema Inteligente de Containers
 
-O proxy automaticamente classifica os alertas em níveis baseados no valor da métrica:
+### Análise Automática de Status
 
-| Nível | Range | Emoji | Cor | Descrição |
-|-------|-------|-------|-----|-----------|
-| **ATENÇÃO** | 0-79% | ⚠️ | 🟡 Amarelo | Uso moderado, monitoramento |
-| **ALERTA** | 80-89% | 🚧 | 🟠 Laranja | Uso alto, atenção necessária |
-| **CRÍTICO** | 90-100% | 🔥 | 🔴 Vermelho | Uso crítico, ação imediata |
-| **RESOLVIDO** | - | ✅ | 🟢 Verde | Alerta foi resolvido |
+O proxy analisa automaticamente o status dos containers baseado em múltiplos fatores:
 
-### Personalização por Nível
+```python
+# Critérios de análise:
+- value=0 + status=firing  → Container DOWN (ALERTA)
+- value=1 + status=resolved → Container UP (IGNORA)
+- value=0 + status=resolved → Container RECOVERING (IGNORA)
+- value=1 + status=firing → Container INSTÁVEL (ALERTA)
+```
 
-Cada nível pode ter GIFs e cores diferentes para cada tipo de alerta:
-- **3 GIFs** diferentes por tipo de alerta (CPU, Disco, Memória, Container)
-- **Cores personalizáveis** para cada combinação nível + tipo
-- **Detecção automática** do nível baseado no valor da métrica
+### Informações Detalhadas
+
+Para containers DOWN, o sistema coleta automaticamente:
+
+- 🏷️ **Nome do Container**: `nginx-web-server`
+- 🖥️ **Node/Host**: `worker-node-01` 
+- � **Namespace**: `web-services`
+- 🎯 **IP da VM**: `192.168.1.200`
+- 📷 **Imagem**: `nginx:1.21-alpine`
+- ⚙️ **Job**: `cadvisor`
+- � **Prometheus**: `prometheus-main`
+
+## 🎯 Endpoints Disponíveis
+
+### 1. `/alert` - Endpoint Principal (Recomendado)
+```yaml
+# Grafana Contact Point
+url: http://seu-proxy:5001/alert
+method: POST
+content-type: application/json
+```
+**Uso**: Alertas padrão do Grafana em formato JSON completo
+
+### 2. `/alert_minimal` - Endpoint para Templates
+```yaml
+# Grafana Contact Point com template customizado
+url: http://seu-proxy:5001/alert_minimal
+method: POST
+content-type: text/plain
+
+# Template exemplo:
+CONTAINER_ALERT_START
+alertname: {{ .CommonLabels.alertname }}
+status: {{ .Status }}
+container_name: {{ .CommonLabels.container }}
+host_ip: {{ .CommonLabels.host_ip }}
+value_A: {{ range .Alerts }}{{ .Values.A }}{{ end }}
+CONTAINER_ALERT_END
+```
+**Uso**: Quando você precisa de controle total sobre os dados enviados
+
+### 3. `/health` - Health Check
+```bash
+curl http://seu-proxy:5001/health
+# Retorna: {"service":"grafana-discord-proxy","status":"ok"}
+```
 
 ## 📋 Pré-requisitos
 
 - Docker e Docker Compose
 - Webhook do Discord configurado
-- Grafana configurado para enviar alertas via webhook
+- Grafana 8.0+ com Contact Points configurados
+- Prometheus com métricas de container (cadvisor, kubelet, etc.)
 
-## ⚙️ Configuração Rápida
+## ⚙️ Instalação e Configuração
 
 ### 1. Clone e Configure
 
 ```bash
-git clone <seu-repositorio>
+git clone https://github.com/duduomena1/proxy-alertmanager.git
 cd proxy-alertmanager
 
 # Copie o arquivo de exemplo
@@ -60,10 +105,12 @@ cp .env.example .env
 nano .env
 ```
 
-### 2. Configure seu Webhook do Discord
+### 2. Configure o Webhook do Discord
 
 ```env
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/SEU_WEBHOOK_AQUI
+DEBUG_MODE=false
+APP_PORT=5001
 ```
 
 ### 3. Execute com Docker
@@ -74,176 +121,388 @@ docker-compose up -d
 
 # Verificar logs
 docker-compose logs -f grafana-discord-proxy
+
+# Verificar status
+docker-compose ps
 ```
 
 ### 4. Configure o Grafana
 
-No Grafana, configure um **Contact Point** com:
-- **Type**: Webhook
-- **URL**: `http://IP_DO_SERVIDOR:5001/alert`
-- **HTTP Method**: POST
-
-## 🎨 Personalização de Alertas
-
-### Configuração de GIFs
-
-Adicione URLs de GIFs para cada tipo de alerta no `.env`:
-
-```env
-# GIFs para cada tipo de alerta
-CPU_ALERT_GIF=https://media.giphy.com/media/xT9IgzoKnwFNmISR8I/giphy.gif
-MEMORY_ALERT_GIF=https://media.giphy.com/media/3oKIPnAiaMCws8nOsE/giphy.gif
-DISK_ALERT_GIF=https://media.giphy.com/media/3o7btPCcdNniyf0ArS/giphy.gif
-CONTAINER_ALERT_GIF=https://media.giphy.com/media/xT9IgG50Fb7Mi0prBC/giphy.gif
+#### Opção A: Alertas Padrão (Simples)
+```yaml
+# Contact Point no Grafana
+Type: Webhook
+URL: http://IP_DO_SERVIDOR:5001/alert
+HTTP Method: POST
 ```
 
-### Configuração de Cores
+#### Opção B: Com Template Customizado
+```yaml
+# Contact Point no Grafana  
+Type: Webhook
+URL: http://IP_DO_SERVIDOR:5001/alert_minimal
+HTTP Method: POST
 
-Personalize as cores dos embeds (formato decimal):
-
-```env
-# Cores para alertas ativos (firing)
-CPU_COLOR_FIRING=16776960      # Amarelo
-MEMORY_COLOR_FIRING=16744192   # Rosa  
-DISK_COLOR_FIRING=16711680     # Vermelho
-CONTAINER_COLOR_FIRING=16753920 # Laranja
-
-# Cores para alertas resolvidos
-*_COLOR_RESOLVED=65280          # Verde para todos
+# Use os templates em /templates/ para evitar erros
 ```
 
-## 📊 Exemplo de Saída
+## 📁 Templates Prontos
 
-### Alerta de Disco (Nível ALERTA)
+O projeto inclui templates testados e livres de erros:
+
 ```
-💿 **ALERTA DE DISCO** 🚧
-
-**Nível:** `ALERTA`
-**Servidor:** `10.2.100.13`
-**Dispositivo:** `/dev/mapper/tatico--candeias--vg-root`
-**Ponto de montagem:** `/`
-**Uso atual:** `83.3%`
-
-**Descrição:** ⚠️ O uso do disco acima de 80%
-**Status:** FIRING
-**Hora:** 2025-10-03 13:44:00
+templates/
+├── container-template-minimal.yml    # Template para containers
+├── CPU-template .yml                 # Template para CPU
+├── memory-template-minimal.yml       # Template para memória  
+├── disk-template-minimal.yml         # Template para disco
+└── prometheus.yaml                   # Config do Prometheus
 ```
 
-### Alerta de CPU (Nível CRÍTICO)
-```
-🖥️ **ALERTA DE CPU** 🔥
+### Exemplo de Template de Container
 
-**Nível:** `CRÍTICO`
-**Servidor:** `10.2.100.13`
-**Uso atual:** `95.2%`
-
-**Descrição:** Uso de CPU crítico
-**Status:** FIRING
-**Hora:** 2025-10-03 14:15:30
-```
-
-## 🔧 Configurações Avançadas
-
-### Modo Debug
-
-Ative logs detalhados:
-
-```env
-DEBUG_MODE=true
+```yaml
+# container-template-minimal.yml
+CONTAINER_ALERT_START
+alertname: {{ .CommonLabels.alertname }}
+status: {{ .Status }}
+startsAt: {{ .Alerts.StartsAt }}
+container: {{ .CommonLabels.container }}
+container_name: {{ .CommonLabels.container_name }}
+namespace: {{ .CommonLabels.namespace }}
+node: {{ .CommonLabels.node }}
+host_ip: {{ .CommonLabels.host_ip }}
+image: {{ .CommonLabels.image }}
+value_A: {{ range .Alerts }}{{ .Values.A }}{{ end }}
+CONTAINER_ALERT_END
 ```
 
-### Porta Personalizada
+## 🧪 Testes Automatizados
 
-```env
-APP_PORT=8080
-```
-
-### Health Check
-
-Verifique se o serviço está funcionando:
+O projeto inclui um conjunto completo de testes:
 
 ```bash
-curl http://localhost:5001/health
+test/
+├── test_alerts.sh              # Teste geral de alertas
+├── test_container_down_vs_up.sh # Teste específico containers
+├── test_container_detailed.sh   # Análise detalhada containers
+├── test_config.sh              # Configurações de teste
+├── validacao_final.sh          # Validação completa
+└── *.json                      # Payloads de teste
+```
+
+### Executando Testes
+
+```bash
+# Teste específico de containers
+./test/test_container_down_vs_up.sh
+
+# Teste detalhado com análise
+./test/test_container_detailed.sh
+
+# Teste geral
+./test/test_alerts.sh
+```
+
+## 📊 Exemplos de Saída
+
+### Alerta de Container DOWN
+
+```text
+🐳 **CONTAINER CRÍTICO** 🔴
+
+**Container:** `nginx-web-server`
+**Status:** Container está PARADO e não responde
+**Severidade:** `CRÍTICO`
+
+📦 **Namespace:** `web-services`
+🖥️ **Node:** `worker-node-01`
+⚙️ **Job:** `cadvisor`
+🏷️ **Image:** `nginx:1.21-alpine`
+
+⏰ **Início:** 2025-10-14T18:45:00Z
+🔧 **Config:** Prometheus: prometheus-main | Job: cadvisor | Env: production
+```
+
+### Alerta de Disco
+
+```text
+� **DISCO ALERTA** �
+
+📊 **Uso de DISCO:** 83.3% (🚧 ALERTA)
+🖥️ **Servidor:** 192.168.1.100
+💾 **Device:** /dev/sda1
+📁 **Mountpoint:** /var/lib/docker
+
+⏰ **Início:** 2025-10-14T18:45:00Z
+🔧 **Config:** Prometheus: prometheus-main | Service: node-exporter
+```
+
+## 🔧 Configuração Avançada
+
+### Variáveis de Ambiente
+
+```env
+# Básico
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+DEBUG_MODE=false
+APP_PORT=5001
+
+# Cores por Severidade (formato decimal)
+CPU_LOW_COLOR=16776960          # Amarelo
+CPU_MEDIUM_COLOR=16753920       # Laranja  
+CPU_HIGH_COLOR=16711680         # Vermelho
+
+# GIFs por Tipo de Alerta
+CPU_LOW_GIF=https://giphy.com/...
+MEMORY_MEDIUM_GIF=https://giphy.com/...
+CONTAINER_DOWN_GIF=https://giphy.com/...
+```
+
+### Configuração do Docker Compose
+
+```yaml
+# docker-compose.yml
+services:
+  grafana-discord-proxy:
+    build: .
+    ports:
+      - "5001:5001"
+    environment:
+      - DEBUG_MODE=true
+    networks:
+      - grafana_observability
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 ```
 
 ## 🐳 Deploy em Produção
 
-### Com Grafana Existente
+### Com Docker Swarm
 
-Se já tem Grafana rodando, use a rede dele:
+```bash
+# Deploy no swarm
+docker stack deploy -c docker-compose.yml grafana-proxy
+
+# Verificar serviços
+docker service ls
+```
+
+### Com Kubernetes
 
 ```yaml
-# docker-compose.yml
-networks:
-  grafana_default:
-    external: true
+# k8s-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana-discord-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: grafana-discord-proxy
+  template:
+    spec:
+      containers:
+      - name: proxy
+        image: grafana-discord-proxy:latest
+        ports:
+        - containerPort: 5001
+        env:
+        - name: DISCORD_WEBHOOK_URL
+          valueFrom:
+            secretKeyRef:
+              name: discord-secret
+              key: webhook-url
 ```
 
-### Monitoramento
-
-O container inclui health check automático:
+### Monitoramento e Logs
 
 ```bash
-# Ver status do health check
-docker ps
+# Logs em tempo real
+docker-compose logs -f grafana-discord-proxy
+
+# Métricas do container
+docker stats grafana-discord-proxy-prod
+
+# Health check
+curl -s http://localhost:5001/health | jq
 ```
 
-## 🛠️ Desenvolvimento Local
+## 🛠️ Desenvolvimento
+
+### Setup Local
 
 ```bash
+# Clonar repositório
+git clone https://github.com/duduomena1/proxy-alertmanager.git
+cd proxy-alertmanager
+
+# Ambiente virtual Python
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# ou
+venv\Scripts\activate     # Windows
+
 # Instalar dependências
 pip install -r requirements.txt
 
 # Executar em modo desenvolvimento
 export DEBUG_MODE=true
+export DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 python discord_proxy.py
 ```
 
-## 📝 Estrutura do Projeto
+### Estrutura de Arquivos
 
-```
+```text
 proxy-alertmanager/
-├── discord_proxy.py      # Aplicação principal
-├── requirements.txt      # Dependências Python
-├── Dockerfile           # Configuração do container
-├── docker-compose.yml   # Orquestração dos serviços
-├── .env.example        # Exemplo de configurações
-└── README.md           # Este arquivo
+├── discord_proxy.py           # 🐍 Aplicação Flask principal
+├── requirements.txt           # 📦 Dependências Python
+├── Dockerfile                 # 🐳 Configuração do container
+├── docker-compose.yml         # 🚀 Orquestração dos serviços
+├── .env.example              # ⚙️ Exemplo de configurações
+├── rebuild.sh                # 🔧 Script de rebuild automático
+├── templates/                # 📄 Templates do Grafana
+│   ├── container-template-minimal.yml
+│   ├── CPU-template .yml
+│   ├── memory-template-minimal.yml
+│   ├── disk-template-minimal.yml
+│   └── prometheus.yaml
+├── test/                     # 🧪 Scripts de teste
+│   ├── test_container_down_vs_up.sh
+│   ├── test_container_detailed.sh
+│   ├── test_alerts.sh
+│   └── *.json
+└── GRAFANA_METRICS_GUIDE.md  # 📚 Guia de configuração
 ```
 
 ## 🔍 Troubleshooting
 
-### Alertas não chegam no Discord
+### Problemas Comuns
 
-1. Verifique se o webhook URL está correto
-2. Confirme se o Grafana consegue acessar a URL do proxy
-3. Verifique os logs: `docker-compose logs grafana-discord-proxy`
+#### 1. Alertas não chegam no Discord
 
-### Cores não aparecem
+```bash
+# Verificar conectividade
+curl -X POST $DISCORD_WEBHOOK_URL \
+  -H "Content-Type: application/json" \
+  -d '{"content":"Teste de conectividade"}'
 
-Certifique-se de usar o formato decimal correto:
-- Vermelho: `16711680`
-- Verde: `65280`
-- Azul: `255`
+# Verificar logs do proxy
+docker-compose logs -f grafana-discord-proxy
 
-### GIFs não aparecem
+# Testar endpoint manualmente
+curl -X POST http://localhost:5001/alert \
+  -H "Content-Type: application/json" \
+  --data @test/test_alert_endpoint.json
+```
 
-1. Verifique se a URL do GIF é válida
-2. Teste a URL diretamente no navegador
-3. Alguns serviços podem bloquear hotlinking
+#### 2. Containers não são detectados corretamente
 
-## 🤝 Contribuição
+```bash
+# Habilitar debug
+export DEBUG_MODE=true
+docker-compose restart grafana-discord-proxy
 
-Sinta-se à vontade para:
-- Reportar bugs
-- Sugerir melhorias
-- Enviar pull requests
-- Adicionar novos tipos de alertas
+# Testar com payload específico
+./test/test_container_down_vs_up.sh
 
-## 📄 Licença
+# Verificar logs de parsing
+docker-compose logs grafana-discord-proxy | grep "DEBUG.*Container"
+```
 
-Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
+#### 3. Templates com erros no Grafana
+
+Use os templates fornecidos em `/templates/` que são livres dos erros:
+
+- ❌ `float64` não definido
+- ❌ `regexReplaceAll` não definido  
+- ❌ `atof` não disponível
+
+✅ **Solução**: Templates minimalistas com processamento no proxy
+
+### Debug Avançado
+
+```bash
+# Modo debug completo
+echo "DEBUG_MODE=true" >> .env
+docker-compose up -d
+
+# Monitorar requests em tempo real
+docker-compose logs -f grafana-discord-proxy | grep -E "POST|DEBUG"
+
+# Testar parsing manual
+curl -X POST http://localhost:5001/alert_minimal \
+  -H "Content-Type: text/plain" \
+  --data "CONTAINER_ALERT_START
+alertname: ContainerDown
+status: firing
+container_name: test-container
+value_A: 0
+CONTAINER_ALERT_END"
+```
+
+## 🤝 Contribuições
+
+Contribuições são muito bem-vindas! Este projeto está em desenvolvimento ativo e há várias áreas onde você pode ajudar:
+
+### 🎯 Como Contribuir
+
+1. **Fork** este repositório
+2. **Crie** uma branch para sua feature (`git checkout -b feature/nova-funcionalidade`)
+3. **Commit** suas mudanças (`git commit -am 'Adiciona nova funcionalidade'`)
+4. **Push** para a branch (`git push origin feature/nova-funcionalidade`)
+5. **Abra** um Pull Request
+
+### 🛠️ Áreas que Precisam de Ajuda
+
+- **🧪 Testes**: Mais cenários de teste para diferentes tipos de alerta
+- **📊 Métricas**: Suporte a novos tipos de métricas e dashboards
+- **🎨 Templates**: Templates adicionais para diferentes configurações
+- **🔧 Integração**: Suporte a outras plataformas (Slack, Teams, etc.)
+- **📚 Documentação**: Melhorias na documentação e exemplos
+- **🚀 Performance**: Otimizações e melhorias de desempenho
+- **🛡️ Segurança**: Validações adicionais e hardening
+
+### 📋 Guidelines para PRs
+
+- ✅ **Testes**: Inclua testes para novas funcionalidades
+- ✅ **Documentação**: Atualize o README se necessário
+- ✅ **Código**: Siga o padrão de código existente
+- ✅ **Commits**: Use mensagens descritivas
+- ✅ **Compatibilidade**: Mantenha compatibilidade com versões existentes
+
+### 🐛 Reportando Bugs
+
+Ao reportar bugs, inclua:
+
+- **Versão** do proxy
+- **Configuração** do Grafana
+- **Logs** do container
+- **Payload** que causou o problema
+- **Comportamento esperado** vs **comportamento atual**
+
+### 💡 Sugerindo Features
+
+Para sugerir novas funcionalidades:
+
+- **Descreva** o problema que a feature resolveria
+- **Explique** como você imagina que funcionaria
+- **Forneça** exemplos de uso
+- **Considere** a compatibilidade com o código existente
 
 ---
 
-**Desenvolvido com ❤️ para melhorar a experiência de monitoramento**
+## 📄 Licença
+
+Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
+
+---
+
+Desenvolvido com ❤️ para melhorar a experiência de monitoramento e observabilidade.
+
+🌟 Se este projeto te ajudou, considere dar uma estrela no GitHub!

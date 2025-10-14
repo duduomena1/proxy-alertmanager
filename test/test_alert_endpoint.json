@@ -1,0 +1,26 @@
+{
+  "receiver": "discord-webhook",
+  "status": "firing", 
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "ContainerDown",
+        "container": "nginx-web-server",
+        "host_ip": "192.168.1.200",
+        "job": "cadvisor",
+        "prometheus_server": "prometheus-main",
+        "namespace": "web-services",
+        "node": "worker-node-01"
+      },
+      "annotations": {
+        "description": "Container nginx-web-server está offline há mais de 1 minuto"
+      },
+      "startsAt": "2025-10-14T19:30:00Z",
+      "values": {
+        "A": 0
+      },
+      "valueString": "value=0"
+    }
+  ]
+}

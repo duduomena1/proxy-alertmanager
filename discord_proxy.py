@@ -834,5 +834,442 @@ def handle_legacy_alert(data):
     resp = requests.post(DISCORD_WEBHOOK_URL, json=payload)
     return '', resp.status_code
 
+def parse_minimal_template_data(text):
+    """
+    Processa dados dos templates minimalistas que enviam dados brutos
+    Procura por blocos ALERT_START/ALERT_END e extrai informações
+    """
+    alerts = []
+    
+    # Padrões para diferentes tipos de alertas
+    patterns = [
+        r'CPU_ALERT_START(.*?)CPU_ALERT_END',
+        r'MEMORY_ALERT_START(.*?)MEMORY_ALERT_END', 
+        r'CONTAINER_ALERT_START(.*?)CONTAINER_ALERT_END',
+        r'DISK_ALERT_START(.*?)DISK_ALERT_END'
+    ]
+    
+    for pattern in patterns:
+        matches = re.findall(pattern, text, re.DOTALL)
+        for match in matches:
+            alert_data = parse_alert_block(match)
+            if alert_data:
+                alerts.append(alert_data)
+    
+    return alerts
+
+def parse_alert_block(block):
+    """
+    Extrai dados de um bloco de alerta individual
+    """
+    lines = block.strip().split('\n')
+    data = {}
+    labels = {}
+    values = {}
+    
+    if DEBUG_MODE:
+        print(f"[DEBUG] parse_alert_block - parsing lines: {lines}")
+    
+    for line in lines:
+        line = line.strip()
+        if ':' in line:
+            key, value = line.split(':', 1)
+            key = key.strip()
+            value = value.strip()
+            
+            if DEBUG_MODE:
+                print(f"[DEBUG] Parsing line: '{key}' = '{value}'")
+            
+            # Remove valores vazios
+            if not value or value.lower() in ['', 'n/a', 'null', 'none']:
+                continue
+            
+            # Valores especiais
+            if key in ['alertname', 'status', 'startsAt', 'valuestring']:
+                data[key] = value
+            # Valores de métricas
+            elif key.startswith('value_'):
+                metric_key = key.replace('value_', '')
+                try:
+                    values[metric_key] = float(value)
+                except:
+                    values[metric_key] = value
+            # Labels importantes para containers
+            elif key in ['container', 'container_name', 'pod', 'pod_name', 'name', 'namespace', 'image', 'node', 'kubernetes_node']:
+                labels[key] = value
+            # Labels gerais
+            else:
+                labels[key] = value
+    
+    # Detecta tipo de alerta
+    alertname = data.get('alertname', '').lower()
+    alert_type = detect_alert_type_from_name(alertname)
+    
+    # Extrai IP/Host de forma inteligente
+    host_info = extract_host_info_minimal(labels)
+    
+    # Extrai valor da métrica
+    metric_value = extract_metric_value_minimal(values, data.get('valuestring', ''))
+    
+    # Monta resposta estruturada
+    return {
+        'alert_type': alert_type,
+        'alertname': data.get('alertname', 'Unknown Alert'),
+        'status': data.get('status', 'unknown'),
+        'startsAt': data.get('startsAt', ''),
+        'host_info': host_info,
+        'metric_value': metric_value,
+        'labels': labels,
+        'values': values,
+        'raw_data': data
+    }
+
+def detect_alert_type_from_name(alertname):
+    """
+    Detecta tipo de alerta baseado no nome
+    """
+    alertname = alertname.lower()
+    
+    # Detecta containers com mais precisão
+    container_keywords = ['container', 'docker', 'pod', 'kubelet', 'cadvisor']
+    if any(keyword in alertname for keyword in container_keywords):
+        return 'container'
+    elif 'cpu' in alertname:
+        return 'cpu'
+    elif 'memory' in alertname or 'memoria' in alertname:
+        return 'memory'
+    elif 'disk' in alertname or 'disco' in alertname:
+        return 'disk'
+    else:
+        return 'system'
+
+def extract_host_info_minimal(labels):
+    """
+    Extrai informações do host de forma inteligente para templates minimalistas
+    """
+    # Ordem de preferência para IP
+    for key in ['host_ip', 'real_host', '__address__', 'instance']:
+        if labels.get(key):
+            value = labels[key]
+            # Tenta extrair IP se tiver formato IP:porta
+            ip_match = re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', value)
+            if ip_match:
+                return {
+                    'ip': ip_match.group(1),
+                    'raw': value,
+                    'source': key
+                }
+            else:
+                return {
+                    'ip': value,
+                    'raw': value,
+                    'source': key
+                }
+    
+    return {
+        'ip': 'unknown',
+        'raw': 'unknown',
+        'source': 'none'
+    }
+
+def extract_metric_value_minimal(values, valuestring):
+    """
+    Extrai valor da métrica de diferentes fontes para templates minimalistas
+    """
+    # Tenta pegar valor do Values primeiro
+    if values:
+        for key in ['A', 'B', 'C']:  # Ordem comum no Grafana
+            if key in values:
+                try:
+                    return float(values[key])
+                except:
+                    pass
+    
+    # Tenta extrair do valuestring
+    if valuestring and valuestring != 'unknown':
+        # Busca por números na string
+        number_match = re.search(r'(\d+(?:\.\d+)?)', str(valuestring))
+        if number_match:
+            try:
+                return float(number_match.group(1))
+            except:
+                pass
+    
+    return 0.0
+
+def analyze_container_status(labels, metric_value, alert_status):
+    """
+    Analisa o status detalhado do container baseado nas informações disponíveis
+    """
+    container_name = (
+        labels.get('container') or 
+        labels.get('container_name') or 
+        labels.get('pod') or 
+        labels.get('name', 'Container Desconhecido')
+    )
+    
+    if DEBUG_MODE:
+        print(f"[DEBUG] analyze_container_status: container='{container_name}', value={metric_value}, status='{alert_status}', type={type(metric_value)}")
+    
+    # Analisa o status baseado no valor da métrica e status do alerta
+    if metric_value == 0:
+        if alert_status.lower() == 'firing':
+            status_type = "DOWN"
+            status_icon = "🔴"
+            status_description = "Container está PARADO e não responde"
+            severity = "CRÍTICO"
+        else:
+            status_type = "RECOVERING"
+            status_icon = "🔄"
+            status_description = "Container estava parado mas pode estar reiniciando"
+            severity = "ATENÇÃO"
+    elif metric_value == 1:
+        status_type = "UP"
+        status_icon = "🟢"
+        status_description = "Container está funcionando normalmente"
+        severity = "OK"
+    else:
+        status_type = "UNKNOWN"
+        status_icon = "❓"
+        status_description = f"Status desconhecido (valor: {metric_value})"
+        severity = "DESCONHECIDO"
+    
+    # Extrai informações do ambiente
+    namespace = labels.get('namespace', labels.get('kube_namespace', 'default'))
+    node = labels.get('node', labels.get('kubernetes_node', labels.get('node_name', 'N/A')))
+    image = labels.get('image', labels.get('container_image', 'N/A'))
+    job = labels.get('job', 'N/A')
+    
+    return {
+        'container_name': container_name,
+        'status_type': status_type,
+        'status_icon': status_icon,
+        'status_description': status_description,
+        'severity': severity,
+        'namespace': namespace,
+        'node': node,
+        'image': image,
+        'job': job,
+        'should_alert': status_type in ['DOWN', 'UNKNOWN'] and alert_status.lower() == 'firing'
+    }
+
+def format_enhanced_alert_message(alerts):
+    """
+    Formata mensagem melhorada com dados processados dos templates minimalistas
+    """
+    if not alerts:
+        return "⚠️ **Alerta recebido mas não foi possível processar os dados**"
+    
+    message_parts = []
+    
+    # Filtra alertas - para containers, usa análise inteligente
+    filtered_alerts = []
+    for alert in alerts:
+        if alert['alert_type'] == 'container':
+            # Analisa o container para decidir se deve alertar
+            container_analysis = analyze_container_status(alert['labels'], alert['metric_value'], alert['status'])
+            
+            # Só alerta se should_alert for True (container DOWN ou com problemas)
+            if container_analysis['should_alert']:
+                filtered_alerts.append(alert)
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Container {container_analysis['status_type']} detectado: {container_analysis['container_name']} = {alert['metric_value']}")
+            else:
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Container {container_analysis['status_type']} ignorado: {container_analysis['container_name']} = {alert['metric_value']}")
+        else:
+            # Para outros tipos, processa normalmente
+            filtered_alerts.append(alert)
+    
+    if not filtered_alerts:
+        return "ℹ️ **Nenhum alerta crítico para processar** (containers UP ou alertas resolvidos ignorados)"
+    
+    # Agrupa por tipo
+    alerts_by_type = {}
+    for alert in filtered_alerts:
+        alert_type = alert['alert_type']
+        if alert_type not in alerts_by_type:
+            alerts_by_type[alert_type] = []
+        alerts_by_type[alert_type].append(alert)
+    
+    # Formata cada tipo
+    for alert_type, type_alerts in alerts_by_type.items():
+        config = ALERT_CONFIGS.get(alert_type, ALERT_CONFIGS['default'])
+        
+        message_parts.append(f"\n{config['emoji']} **ALERTAS DE {config['name'].upper()}**")
+        message_parts.append("=" * 50)
+        
+        for alert in type_alerts:
+            host = alert['host_info']
+            labels = alert['labels']
+            
+            message_parts.append(f"\n📍 **Servidor:** {host['ip']} (`{host['source']}`)")
+            message_parts.append(f"🚨 **Status:** {alert['status'].upper()}")
+            
+            # Informações específicas por tipo de alerta
+            if alert_type == 'disk':
+                device = labels.get('device', 'N/A')
+                mountpoint = labels.get('mountpoint', 'N/A')
+                fstype = labels.get('fstype', 'N/A')
+                
+                message_parts.append(f"💿 **Dispositivo:** {device}")
+                message_parts.append(f"📁 **Ponto de Montagem:** {mountpoint}")
+                if fstype != 'N/A':
+                    message_parts.append(f"🗂️ **Filesystem:** {fstype}")
+                    
+                if alert['metric_value'] > 0:
+                    message_parts.append(f"📊 **Uso do Disco:** {alert['metric_value']}{config['unit']}")
+                    
+            elif alert_type == 'container':
+                # Extrai nome do container de múltiplas fontes
+                container_name = (
+                    labels.get('container') or 
+                    labels.get('container_name') or 
+                    labels.get('name') or 
+                    labels.get('pod') or 
+                    labels.get('pod_name') or
+                    'Container Desconhecido'
+                )
+                
+                # Determina status mais detalhado
+                if alert['metric_value'] == 0:
+                    container_status = "🔴 **CONTAINER PARADO/OFFLINE**"
+                    status_detail = "❌ **CRÍTICO** - Container não está respondendo"
+                elif alert['status'].lower() == 'firing':
+                    container_status = "� **CONTAINER COM PROBLEMAS**" 
+                    status_detail = "⚠️ **ALERTA** - Container pode estar instável"
+                else:
+                    container_status = "❓ **STATUS DESCONHECIDO**"
+                    status_detail = f"ℹ️ Valor da métrica: {alert['metric_value']}"
+                
+                # Informações adicionais do container
+                namespace = labels.get('namespace', labels.get('kube_namespace', 'default'))
+                pod = labels.get('pod', 'N/A')
+                image = labels.get('image', labels.get('container_image', 'N/A'))
+                node = labels.get('node', labels.get('kubernetes_node', labels.get('node_name', 'N/A')))
+                
+                # Usa análise aprimorada de container
+                container_analysis = analyze_container_status(labels, alert['metric_value'], alert['status'])
+                
+                message_parts.append(f"🐳 **Container:** `{container_analysis['container_name']}`")
+                message_parts.append(f"{container_analysis['status_icon']} **Status:** {container_analysis['status_description']}")
+                message_parts.append(f"� **Severidade:** {container_analysis['severity']}")
+                
+                # Informações do ambiente - usando dados da análise
+                if container_analysis['namespace'] != 'default':
+                    message_parts.append(f"📦 **Namespace:** `{container_analysis['namespace']}`")
+                if container_analysis['node'] != 'N/A':
+                    message_parts.append(f"🖥️ **Node:** `{container_analysis['node']}`")
+                if container_analysis['job'] != 'N/A':
+                    message_parts.append(f"⚙️ **Job:** `{container_analysis['job']}`")
+                
+                # Mostra imagem se disponível (versão compacta)
+                if container_analysis['image'] != 'N/A':
+                    image_name = container_analysis['image'].split('/')[-1] if '/' in container_analysis['image'] else container_analysis['image']
+                    if len(image_name) > 35:
+                        image_name = image_name[:32] + "..."
+                    message_parts.append(f"�️ **Image:** `{image_name}`")
+                
+            elif alert_type in ['cpu', 'memory']:
+                if alert['metric_value'] > 0:
+                    severity = "🔥 CRÍTICO" if alert['metric_value'] >= 90 else "🚧 ALERTA" if alert['metric_value'] >= 80 else "⚠️ ATENÇÃO"
+                    message_parts.append(f"📊 **Uso de {config['name']}:** {alert['metric_value']}{config['unit']} ({severity})")
+            
+            message_parts.append(f"⏰ **Início:** {alert['startsAt']}")
+            
+            # Informações do Prometheus
+            prometheus_info = []
+            
+            if labels.get('prometheus_server'):
+                prometheus_info.append(f"Prometheus: {labels['prometheus_server']}")
+            if labels.get('job'):
+                prometheus_info.append(f"Job: {labels['job']}")
+            if labels.get('service_type'):
+                prometheus_info.append(f"Service: {labels['service_type']}")
+            if labels.get('environment'):
+                prometheus_info.append(f"Env: {labels['environment']}")
+                
+            if prometheus_info:
+                message_parts.append(f"🔧 **Config:** {' | '.join(prometheus_info)}")
+            
+            # Labels importantes que estão chegando (especiais por tipo)
+            important_labels = []
+            if alert_type == 'disk':
+                for key in ['host_ip', 'real_host', 'device', 'mountpoint', 'fstype']:
+                    if labels.get(key):
+                        important_labels.append(f"{key}: {labels[key]}")
+            elif alert_type == 'container':
+                for key in ['host_ip', 'real_host', 'container', 'container_name']:
+                    if labels.get(key):
+                        important_labels.append(f"{key}: {labels[key]}")
+            else:
+                for key in ['host_ip', 'real_host', 'prometheus_server', 'service_type', 'environment']:
+                    if labels.get(key):
+                        important_labels.append(f"{key}: {labels[key]}")
+            
+            if important_labels:
+                message_parts.append(f"🏷️ **Labels:** {' | '.join(important_labels[:4])}")
+            
+            message_parts.append("-" * 30)
+    
+    return "\n".join(message_parts)
+
+def send_to_discord(message):
+    """
+    Envia mensagem para o Discord
+    """
+    payload = {
+        "content": message
+    }
+    
+    try:
+        resp = requests.post(DISCORD_WEBHOOK_URL, json=payload)
+        if DEBUG_MODE:
+            print(f"[DEBUG] Discord response: {resp.status_code}")
+        return '', resp.status_code
+    except Exception as e:
+        if DEBUG_MODE:
+            print(f"[DEBUG] Error sending to Discord: {e}")
+        return f'Error: {str(e)}', 500
+
+# Adicione nova rota para processar templates minimalistas
+@app.route('/alert_minimal', methods=['POST'])
+def alert_minimal():
+    """
+    Endpoint específico para processar alertas dos templates minimalistas
+    """
+    try:
+        # Recebe como texto puro ou JSON
+        if request.is_json:
+            data = request.json
+            text_content = data.get('message', str(data))
+        else:
+            text_content = request.get_data(as_text=True)
+        
+        if DEBUG_MODE:
+            print(f"[DEBUG] Received minimal template data: {repr(text_content[:500])}...")
+        
+        # Tenta processar como dados de template minimal
+        alerts = parse_minimal_template_data(text_content)
+        
+        if alerts:
+            if DEBUG_MODE:
+                print(f"[DEBUG] Processados {len(alerts)} alertas dos templates minimalistas")
+                for alert in alerts:
+                    print(f"[DEBUG] - {alert['alert_type']}: {alert['host_info']['ip']} = {alert['metric_value']}")
+            
+            message = format_enhanced_alert_message(alerts)
+            return send_to_discord(message)
+        else:
+            # Fallback para mensagem original
+            return send_to_discord(f"📢 **ALERTA RECEBIDO**\n```\n{text_content}\n```")
+            
+    except Exception as e:
+        if DEBUG_MODE:
+            print(f"[DEBUG] Erro ao processar template minimal: {e}")
+        
+        # Fallback
+        return send_to_discord(f"⚠️ **ALERTA** (processamento simplificado)\n```\n{request.get_data(as_text=True)}\n```")
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=APP_PORT, debug=DEBUG_MODE)
