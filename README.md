@@ -12,6 +12,25 @@ Um proxy inteligente e avançado para enviar alertas do Grafana para o Discord c
 - 🔧 **Configuração Flexível**: Variáveis de ambiente para todas as personalizações
 - 🔍 **Debug Avançado**: Logs detalhados para troubleshooting e análise
 
+## 🧭 Sumário
+
+- Visão geral e recursos
+- Instalação e configuração
+- Endpoints
+- Templates prontos
+- Testes automatizados
+- Exemplos de saída
+- Configuração avançada (variáveis de ambiente)
+- Supressão de containers por estado
+- Integração com Portainer
+- Deploy
+- Troubleshooting
+- Documentação completa:
+  - Referência de variáveis: `docs/ENV_VARS.md`
+  - Supressão por estado: `docs/CONTAINER_SUPPRESSION.md`
+  - Integração Portainer: `docs/PORTAINER_INTEGRATION.md`
+  - Changelog: `CHANGELOG.md`
+
 ## 🚦 Tipos de Alertas Suportados
 
 | Tipo | Emoji | Detecta por | Análise Especial |
@@ -58,6 +77,7 @@ url: http://seu-proxy:5001/alert
 method: POST
 content-type: application/json
 ```
+ 
 **Uso**: Alertas padrão do Grafana em formato JSON completo
 
 ### 2. `/alert_minimal` - Endpoint para Templates
@@ -77,6 +97,7 @@ host_ip: {{ .CommonLabels.host_ip }}
 value_A: {{ range .Alerts }}{{ .Values.A }}{{ end }}
 CONTAINER_ALERT_END
 ```
+ 
 **Uso**: Quando você precisa de controle total sobre os dados enviados
 
 ### 3. `/health` - Health Check
