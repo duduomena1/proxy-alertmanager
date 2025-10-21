@@ -11,17 +11,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copia requirements primeiro para cache de build
-COPY requirements.txt .
+## Copia requirements primeiro para cache de build
+COPY requirements.txt ./
 
-# Instala dependências Python
+## Instala dependências Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia código da aplicação
-COPY discord_proxy.py .
+## Copia código da aplicação modular
+COPY app ./app
+COPY main.py ./
+## Mantém o wrapper para compatibilidade (opcional)
+COPY discord_proxy.py ./
+## Copia configs (inclui portainer_endpoints.json)
+COPY config ./config
 
 # Configurações de produção
-ENV FLASK_APP=discord_proxy.py
+ENV FLASK_APP=main.py
 ENV PYTHONPATH=/app
 ENV DEBUG_MODE=false
 ENV FLASK_ENV=production
@@ -38,5 +43,5 @@ USER appuser
 
 EXPOSE 5001
 
-# Comando para produção
-CMD ["python", "-u", "discord_proxy.py"]
+# Comando para produção (ponto de entrada modular)
+CMD ["python", "-u", "main.py"]
