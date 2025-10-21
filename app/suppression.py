@@ -25,6 +25,15 @@ def build_container_key(host: Optional[str], labels: Dict) -> str:
     return f"{_normalize_name(host_key)}|{_normalize_name(cname)}"
 
 
+def build_container_key_by_id(host: Optional[str], container_id: Optional[str]) -> str:
+    """
+    Variante de chave usando o container_id (estável no Portainer), mantendo o host.
+    Prefixa com 'id:' para evitar colisão semântica com nomes iguais a IDs.
+    """
+    host_key = (host or '').split(':')[0]
+    return f"{_normalize_name(host_key)}|id:{_normalize_name(container_id or 'unknown')}"
+
+
 def compute_state(portainer_result: Optional[Dict], metric_value: Optional[float], alert_status: str) -> str:
     """
     Determina estado atual do container usando (na ordem): Portainer -> métricas Grafana.

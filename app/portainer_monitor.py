@@ -17,7 +17,7 @@ from .dedupe import TTLCache, build_alert_fingerprint
 from .formatters import format_container_alert
 from .utils import format_timestamp
 from .services import send_discord_payload
-from .suppression import ContainerSuppressor, build_container_key
+from .suppression import ContainerSuppressor, build_container_key, build_container_key_by_id
 
 
 class PortainerMonitor(threading.Thread):
@@ -116,20 +116,20 @@ class PortainerMonitor(threading.Thread):
                 running = ((s_state == 'running') or s_status.startswith('up')) and not (is_paused or is_exited)
                 current[(eid, cid)] = running
 
-                # Alimenta supressor para resetar quando running
+                # Reset de supressão somente quando running; não ativar supressão no tick
                 try:
-                    names = entry.get('Names') or []
-                    container_name = names[0].lstrip('/') if names else entry.get('Id', 'desconhecido')[:12]
-                    mapped_ip = portainer_client.get_host_for_endpoint(eid)
-                    labels_for_key = {'container': container_name}
-                    key = build_container_key(mapped_ip, labels_for_key)
-                    state_for_sup = 'running' if running else ('paused' if is_paused else ('exited' if is_exited else 'down'))
-                    send, reason = self.suppressor.should_send(key, state_for_sup, container_name=container_name)
-                    if DEBUG_MODE:
-                        print(f"[DEBUG] PortainerMonitor: suppression tick key={key} state={state_for_sup} send={send} reason={reason}")
+                    if running:
+                        names = entry.get('Names') or []
+                        container_name = names[0].lstrip('/') if names else entry.get('Id', 'desconhecido')[:12]
+                        mapped_ip = portainer_client.get_host_for_endpoint(eid)
+                        cid = entry.get('Id')
+                        key = build_container_key_by_id(mapped_ip, cid)
+                        _send, reason = self.suppressor.should_send(key, 'running', container_name=container_name)
+                        if DEBUG_MODE and reason == 'reset_on_running':
+                            print(f"[DEBUG] PortainerMonitor: reset suppression on running for key={key}")
                 except Exception as exc:
                     if DEBUG_MODE:
-                        print(f"[DEBUG] PortainerMonitor: erro ao alimentar suppressor: {exc}")
+                        print(f"[DEBUG] PortainerMonitor: erro ao resetar suppressor: {exc}")
 
                 # Atualiza contadores de histerese
                 key = (eid, cid)
@@ -250,8 +250,9 @@ class PortainerMonitor(threading.Thread):
 
         # Supressão por estado (bloqueia reenvio até voltar a running)
         try:
-            labels_for_key = alert_data['labels']
-            key = build_container_key(enriched_info.get('real_ip'), labels_for_key)
+            mapped_ip = enriched_info.get('real_ip')
+            cid = container_entry.get('Id')
+            key = build_container_key_by_id(mapped_ip, cid)
             should_send, reason = self.suppressor.should_send(key, 'down' if state_norm not in ['running', 'paused'] else state_norm, container_name=container_name)
             if DEBUG_MODE:
                 print(f"[DEBUG] PortainerMonitor: suppression check key={key} state={state_norm} send={should_send} reason={reason}")
