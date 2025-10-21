@@ -3,6 +3,7 @@ import os
 import json
 
 from .constants import ALERT_CONFIGS, APP_PORT, DEBUG_MODE, SEVERITY_LEVELS, ALERT_DEDUP_ENABLED, ALERT_COOLDOWN_SECONDS, ALERT_CACHE_MAX
+from .constants import CONTAINER_SUPPRESS_REPEATS
 from .dedupe import TTLCache, build_alert_fingerprint
 from .utils import format_timestamp, extract_metric_value_enhanced, format_metric_value, _is_meaningful
 from .enrichment import extract_real_ip_and_source, build_server_location
@@ -11,12 +12,15 @@ from .formatters import extract_container_info, format_container_alert
 from .portainer import portainer_client
 from .portainer_monitor import start_portainer_monitor
 from .services import send_discord_payload
+from .suppression import ContainerSuppressor, compute_state, build_container_key
 
 
 def create_app():
     app = Flask(__name__)
     # Cache de dedupe (em memória, por processo)
     dedupe_cache = TTLCache(ttl_seconds=ALERT_COOLDOWN_SECONDS, max_size=ALERT_CACHE_MAX)
+    # Supressor de repetição (por container)
+    container_suppressor = ContainerSuppressor()
 
     @app.route('/health', methods=['GET'])
     def health():
@@ -191,6 +195,25 @@ def create_app():
                     get_metric_value,
                     portainer_result=portainer_result,
                 )
+
+                # LÓGICA DE SUPRESSÃO POR ESTADO (apenas containers)
+                try:
+                    current_state = compute_state(portainer_result, metric_value, alert_status)
+                    container_info = alert_data.get('enriched_data', {}).get('container_context', {})
+                    container_name = container_info.get('container_name') or labels.get('container') or labels.get('container_name')
+                    host_key = real_ip or clean_host
+                    key = build_container_key(host_key, labels)
+                    should_send, reason = container_suppressor.should_send(key, current_state, container_name=container_name)
+                    if DEBUG_MODE:
+                        print(f"[DEBUG] Container suppression check: key={key} state={current_state} send={should_send} reason={reason}")
+                    if not should_send:
+                        # Pula criação de embed para este alerta
+                        if DEBUG_MODE:
+                            print("[DEBUG] Suprimindo alerta de container por regra de estado.")
+                        continue
+                except Exception as exc:
+                    if DEBUG_MODE:
+                        print(f"[DEBUG] Erro na supressão de container: {exc}")
 
             elif alert_type == 'disk':
                 lines = [

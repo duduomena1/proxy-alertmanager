@@ -17,6 +17,7 @@ from .dedupe import TTLCache, build_alert_fingerprint
 from .formatters import format_container_alert
 from .utils import format_timestamp
 from .services import send_discord_payload
+from .suppression import ContainerSuppressor, build_container_key
 
 
 class PortainerMonitor(threading.Thread):
@@ -36,6 +37,8 @@ class PortainerMonitor(threading.Thread):
         self._running_counts: Dict[Tuple[int, str], int] = {}
         self._down_counts: Dict[Tuple[int, str], int] = {}
         self.down_confirmations = max(1, PORTAINER_MONITOR_DOWN_CONFIRMATIONS)
+        # Supressor de repetição por container
+        self.suppressor = ContainerSuppressor()
 
     def stop(self):
         self._stop.set()
@@ -112,6 +115,21 @@ class PortainerMonitor(threading.Thread):
                 # running se: state indica running OU status começa com 'up', mas não estiver paused
                 running = ((s_state == 'running') or s_status.startswith('up')) and not (is_paused or is_exited)
                 current[(eid, cid)] = running
+
+                # Alimenta supressor para resetar quando running
+                try:
+                    names = entry.get('Names') or []
+                    container_name = names[0].lstrip('/') if names else entry.get('Id', 'desconhecido')[:12]
+                    mapped_ip = portainer_client.get_host_for_endpoint(eid)
+                    labels_for_key = {'container': container_name}
+                    key = build_container_key(mapped_ip, labels_for_key)
+                    state_for_sup = 'running' if running else ('paused' if is_paused else ('exited' if is_exited else 'down'))
+                    send, reason = self.suppressor.should_send(key, state_for_sup, container_name=container_name)
+                    if DEBUG_MODE:
+                        print(f"[DEBUG] PortainerMonitor: suppression tick key={key} state={state_for_sup} send={send} reason={reason}")
+                except Exception as exc:
+                    if DEBUG_MODE:
+                        print(f"[DEBUG] PortainerMonitor: erro ao alimentar suppressor: {exc}")
 
                 # Atualiza contadores de histerese
                 key = (eid, cid)
@@ -210,8 +228,11 @@ class PortainerMonitor(threading.Thread):
 
         # Determina status legível (ex.: exited -> stopped)
         state_raw = (container_entry.get('State') or container_entry.get('Status') or 'missing').lower()
-        if state_raw in ['missing', 'exited', 'dead', 'created', 'paused']:
-            state_norm = 'stopped'
+        # Preserva 'paused' explicitamente para permitir allowlist
+        if 'paused' in state_raw:
+            state_norm = 'paused'
+        elif any(x in state_raw for x in ['missing', 'exited', 'dead', 'created', 'stopped', 'removing']):
+            state_norm = 'exited'
         else:
             state_norm = state_raw
 
@@ -226,6 +247,19 @@ class PortainerMonitor(threading.Thread):
             'matched_name': container_name,
             'error': None,
         }
+
+        # Supressão por estado (bloqueia reenvio até voltar a running)
+        try:
+            labels_for_key = alert_data['labels']
+            key = build_container_key(enriched_info.get('real_ip'), labels_for_key)
+            should_send, reason = self.suppressor.should_send(key, 'down' if state_norm not in ['running', 'paused'] else state_norm, container_name=container_name)
+            if DEBUG_MODE:
+                print(f"[DEBUG] PortainerMonitor: suppression check key={key} state={state_norm} send={should_send} reason={reason}")
+            if not should_send:
+                return
+        except Exception as exc:
+            if DEBUG_MODE:
+                print(f"[DEBUG] PortainerMonitor: erro na supressão por estado: {exc}")
 
         # Dedupe
         fp = build_alert_fingerprint('container', alert_data['labels'], enriched_info, alert_status='firing')

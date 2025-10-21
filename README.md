@@ -22,7 +22,7 @@ Um proxy inteligente e avançado para enviar alertas do Grafana para o Discord c
 | **Container** | 🐳 | `container`, `docker`, `pod` | **Status inteligente DOWN/UP** |
 | **Padrão** | 🚨 | Outros tipos | Processamento genérico |
 
-## � Sistema Inteligente de Containers
+## 🧠 Sistema Inteligente de Containers
 
 ### Análise Automática de Status
 
@@ -41,16 +41,17 @@ O proxy analisa automaticamente o status dos containers baseado em múltiplos fa
 Para containers DOWN, o sistema coleta automaticamente:
 
 - 🏷️ **Nome do Container**: `nginx-web-server`
-- 🖥️ **Node/Host**: `worker-node-01` 
-- � **Namespace**: `web-services`
+- 🖥️ **Node/Host**: `worker-node-01`
+- 📦 **Namespace**: `web-services`
 - 🎯 **IP da VM**: `192.168.1.200`
 - 📷 **Imagem**: `nginx:1.21-alpine`
 - ⚙️ **Job**: `cadvisor`
-- � **Prometheus**: `prometheus-main`
+- 🧭 **Prometheus**: `prometheus-main`
 
 ## 🎯 Endpoints Disponíveis
 
 ### 1. `/alert` - Endpoint Principal (Recomendado)
+
 ```yaml
 # Grafana Contact Point
 url: http://seu-proxy:5001/alert
@@ -60,6 +61,7 @@ content-type: application/json
 **Uso**: Alertas padrão do Grafana em formato JSON completo
 
 ### 2. `/alert_minimal` - Endpoint para Templates
+
 ```yaml
 # Grafana Contact Point com template customizado
 url: http://seu-proxy:5001/alert_minimal
@@ -78,6 +80,7 @@ CONTAINER_ALERT_END
 **Uso**: Quando você precisa de controle total sobre os dados enviados
 
 ### 3. `/health` - Health Check
+
 ```bash
 curl http://seu-proxy:5001/health
 # Retorna: {"service":"grafana-discord-proxy","status":"ok"}
@@ -129,6 +132,7 @@ docker-compose ps
 ### 4. Configure o Grafana
 
 #### Opção A: Alertas Padrão (Simples)
+
 ```yaml
 # Contact Point no Grafana
 Type: Webhook
@@ -137,6 +141,7 @@ HTTP Method: POST
 ```
 
 #### Opção B: Com Template Customizado
+
 ```yaml
 # Contact Point no Grafana  
 Type: Webhook
@@ -150,7 +155,7 @@ HTTP Method: POST
 
 O projeto inclui templates testados e livres de erros:
 
-```
+```text
 templates/
 ├── container-template-minimal.yml    # Template para containers
 ├── CPU-template .yml                 # Template para CPU
@@ -257,7 +262,53 @@ CPU_HIGH_COLOR=16711680         # Vermelho
 CPU_LOW_GIF=https://giphy.com/...
 MEMORY_MEDIUM_GIF=https://giphy.com/...
 CONTAINER_DOWN_GIF=https://giphy.com/...
+CONTAINER_UP_COLOR=65280
+CONTAINER_UP_GIF=https://giphy.com/...
+
+# Supressão por estado (containers)
+CONTAINER_SUPPRESS_REPEATS=true
+CONTAINER_SUPPRESS_TTL_SECONDS=86400
+CONTAINER_PAUSED_ALLOWLIST=nginx_paused,batch-worker
+
+# Portainer (opcional)
+CONTAINER_VALIDATE_WITH_PORTAINER=true
+PORTAINER_BASE_URL=https://portainer.local/api
+PORTAINER_API_KEY=xxxxxxxx
+PORTAINER_ENDPOINT_MAP_FILE=config/portainer_endpoints.json
+PORTAINER_ACTIVE_MONITOR=true
 ```
+
+Para a lista completa e explicações detalhadas, consulte: `docs/ENV_VARS.md`.
+
+### Supressão de containers por estado
+
+O proxy “trava” alertas repetidos enquanto o container não voltar para `running`. Assim, loops de `restarting` não ficam re-alertando. Configure:
+
+```env
+CONTAINER_SUPPRESS_REPEATS=true
+CONTAINER_SUPPRESS_TTL_SECONDS=86400
+CONTAINER_PAUSED_ALLOWLIST=nginx_paused,batch-worker
+```
+
+Veja o guia completo em `docs/CONTAINER_SUPPRESSION.md`.
+
+### Integração com Portainer
+
+- Validação do estado real do container ao processar alertas do Grafana
+- Monitoramento ativo que detecta quedas diretamente no Portainer
+
+Exemplo rápido:
+
+```env
+CONTAINER_VALIDATE_WITH_PORTAINER=true
+PORTAINER_BASE_URL=https://portainer.local/api
+PORTAINER_API_KEY=xxxxxxxx
+PORTAINER_ENDPOINT_MAP_FILE=config/portainer_endpoints.json
+PORTAINER_ACTIVE_MONITOR=true
+PORTAINER_MONITOR_SCOPE=map
+```
+
+Guia completo em `docs/PORTAINER_INTEGRATION.md`.
 
 ### Configuração do Docker Compose
 
