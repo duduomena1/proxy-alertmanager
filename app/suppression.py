@@ -5,6 +5,8 @@ from .constants import (
     CONTAINER_SUPPRESS_REPEATS,
     CONTAINER_SUPPRESS_TTL_SECONDS,
     CONTAINER_PAUSED_ALLOWLIST,
+    CONTAINER_ALWAYS_NOTIFY_ALLOWLIST,
+    CONTAINER_IGNORE_ALLOWLIST,
 )
 
 
@@ -97,6 +99,12 @@ class ContainerSuppressor:
             return True, 'feature_disabled'
 
         name_norm = _normalize_name(container_name or '')
+        # Containers completamente ignorados (sem alertas)
+        if name_norm in { _normalize_name(n) for n in CONTAINER_IGNORE_ALLOWLIST }:
+            return False, 'completely_ignored'
+        # Containers no allowlist de "sempre notificar" nunca são suprimidos
+        if name_norm in { _normalize_name(n) for n in CONTAINER_ALWAYS_NOTIFY_ALLOWLIST }:
+            return True, 'always_notify_allowlisted'
         # Ignorar 'paused' quando na allowlist
         if current_state == 'paused' and name_norm in { _normalize_name(n) for n in CONTAINER_PAUSED_ALLOWLIST }:
             # Mantém registro mas não ativa supressão

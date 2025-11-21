@@ -6,6 +6,7 @@ from .constants import (
     DEBUG_MODE,
     ALERT_DEDUP_ENABLED,
     ALERT_COOLDOWN_SECONDS,
+    CONTAINER_ALWAYS_NOTIFY_ALLOWLIST,
     PORTAINER_ACTIVE_MONITOR,
     PORTAINER_MONITOR_INTERVAL_SECONDS,
     PORTAINER_MONITOR_ENDPOINTS,
@@ -262,9 +263,11 @@ class PortainerMonitor(threading.Thread):
             if DEBUG_MODE:
                 print(f"[DEBUG] PortainerMonitor: erro na supressão por estado: {exc}")
 
-        # Dedupe
+        # Dedupe (pula se estiver no allowlist de "sempre notificar")
         fp = build_alert_fingerprint('container', alert_data['labels'], enriched_info, alert_status='firing')
-        if ALERT_DEDUP_ENABLED:
+        cname_norm = (container_name or '').strip().lower()
+        always_notify = cname_norm in {n.strip().lower() for n in CONTAINER_ALWAYS_NOTIFY_ALLOWLIST}
+        if ALERT_DEDUP_ENABLED and not always_notify:
             if self.dedupe_cache.is_within_ttl(fp):
                 if DEBUG_MODE:
                     print(f"[DEBUG] PortainerMonitor: alerta suprimido por dedupe: {fp}")

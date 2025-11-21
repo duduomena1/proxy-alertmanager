@@ -48,6 +48,16 @@ Exemplo:
 CONTAINER_PAUSED_ALLOWLIST=nginx_paused,batch-worker
 ```
 
+## 🚫 Allowlist de Ignorar Completamente
+
+Se você tem containers que devem ser completamente ignorados (sem alertas em nenhum estado), use `CONTAINER_IGNORE_ALLOWLIST`. Útil para containers que ficam reiniciando constantemente e você não quer ser notificado.
+
+Exemplo:
+
+```env
+CONTAINER_IGNORE_ALLOWLIST=problematic-app,temp-worker
+```
+
 ## 🔧 Configuração
 
 ```env
@@ -57,6 +67,8 @@ CONTAINER_SUPPRESS_REPEATS=true
 CONTAINER_SUPPRESS_TTL_SECONDS=86400
 # Lista de containers permitidos em paused
 CONTAINER_PAUSED_ALLOWLIST=nginx_paused,batch-worker
+# Containers completamente ignorados (sem alertas)
+CONTAINER_IGNORE_ALLOWLIST=problematic-app,temp-worker
 ```
 
 ## 🧪 Exemplos práticos

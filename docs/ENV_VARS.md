@@ -32,6 +32,9 @@ Este documento lista todas as variáveis de ambiente suportadas pelo projeto, se
 - CONTAINER_PAUSED_ALLOWLIST (default: "")
   - Lista separada por vírgula com nomes/IDs de containers que podem ficar `paused` sem alertar, e sem ativar supressão.
   - Ex.: CONTAINER_PAUSED_ALLOWLIST=nginx_paused,batch-worker
+- CONTAINER_ALWAYS_NOTIFY_ALLOWLIST (default: "")
+  - Lista separada por vírgula com nomes/IDs de containers que NUNCA devem ser suprimidos: sempre enviar alerta, mesmo que repetido ou dentro do cooldown de dedupe.
+  - Ex.: CONTAINER_ALWAYS_NOTIFY_ALLOWLIST=api-prod,worker-1,nginx-edge
 
 Comportamento:
 
@@ -97,6 +100,7 @@ DEBUG_MODE=true
 CONTAINER_SUPPRESS_REPEATS=true
 CONTAINER_SUPPRESS_TTL_SECONDS=86400
 CONTAINER_PAUSED_ALLOWLIST=nginx_paused,batch-worker
+CONTAINER_ALWAYS_NOTIFY_ALLOWLIST=api-prod,worker-1,nginx-edge
 
 # Portainer
 CONTAINER_VALIDATE_WITH_PORTAINER=true

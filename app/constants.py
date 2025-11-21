@@ -33,6 +33,14 @@ CONTAINER_SUPPRESS_TTL_SECONDS = int(os.getenv("CONTAINER_SUPPRESS_TTL_SECONDS",
 _paused_allowlist_env = os.getenv("CONTAINER_PAUSED_ALLOWLIST", "").strip()
 CONTAINER_PAUSED_ALLOWLIST = set([s.strip() for s in _paused_allowlist_env.split(",") if s.strip()])
 
+# Containers que NUNCA devem ser suprimidos (sempre notificar)
+_always_notify_allowlist_env = os.getenv("CONTAINER_ALWAYS_NOTIFY_ALLOWLIST", "").strip()
+CONTAINER_ALWAYS_NOTIFY_ALLOWLIST = set([s.strip() for s in _always_notify_allowlist_env.split(",") if s.strip()])
+
+# Containers que devem ser completamente ignorados (sem alertas em nenhum estado)
+_ignore_allowlist_env = os.getenv("CONTAINER_IGNORE_ALLOWLIST", "").strip()
+CONTAINER_IGNORE_ALLOWLIST = set([s.strip() for s in _ignore_allowlist_env.split(",") if s.strip()])
+
 # Configurações de tipos de alertas com níveis de severidade
 ALERT_CONFIGS = {
     "cpu": {"emoji": "🖥️", "name": "CPU", "unit": "%"},

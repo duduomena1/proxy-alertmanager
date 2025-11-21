@@ -3,6 +3,7 @@ import os
 import json
 
 from .constants import ALERT_CONFIGS, APP_PORT, DEBUG_MODE, SEVERITY_LEVELS, ALERT_DEDUP_ENABLED, ALERT_COOLDOWN_SECONDS, ALERT_CACHE_MAX
+from .constants import CONTAINER_ALWAYS_NOTIFY_ALLOWLIST
 from .constants import CONTAINER_SUPPRESS_REPEATS
 from .dedupe import TTLCache, build_alert_fingerprint
 from .utils import format_timestamp, extract_metric_value_enhanced, format_metric_value, _is_meaningful
@@ -369,6 +370,14 @@ def create_app():
             if severity_config['gif']:
                 embed["image"] = {"url": severity_config['gif']}
 
+            # Flag para evitar dedupe quando no allowlist de "sempre notificar"
+            always_notify = False
+            if alert_type == 'container':
+                cinfo = alert_data.get('enriched_data', {}).get('container_context', {})
+                cname = cinfo.get('container_name') or labels.get('container') or labels.get('container_name')
+                cname_norm = (cname or '').strip().lower()
+                always_notify = cname_norm in {n.strip().lower() for n in CONTAINER_ALWAYS_NOTIFY_ALLOWLIST}
+
             processed_alerts.append({
                 "content": content,
                 "embed": embed,
@@ -376,11 +385,12 @@ def create_app():
                 "status": alert_status,
                 "labels": labels,
                 "enriched": enriched_info,
+                "always_notify": always_notify,
             })
 
         for alert in processed_alerts:
-            # Dedupe/cooldown: evita reenvio do mesmo alerta por 60m
-            if ALERT_DEDUP_ENABLED:
+            # Dedupe/cooldown: evita reenvio do mesmo alerta por 60m (exceto always_notify)
+            if ALERT_DEDUP_ENABLED and not alert.get('always_notify', False):
                 fp = build_alert_fingerprint(alert['type'], alert['labels'], alert['enriched'], alert_status=alert['status'])
                 if dedupe_cache.is_within_ttl(fp):
                     if DEBUG_MODE:
