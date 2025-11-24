@@ -254,9 +254,17 @@ class PortainerMonitor(threading.Thread):
             mapped_ip = enriched_info.get('real_ip')
             cid = container_entry.get('Id')
             key = build_container_key_by_id(mapped_ip, cid)
-            should_send, reason = self.suppressor.should_send(key, 'down' if state_norm not in ['running', 'paused'] else state_norm, container_name=container_name)
+            current_state = 'down' if state_norm not in ['running', 'paused'] else state_norm
+            
+            # Passar portainer_client e endpoint_id para verificação blue/green
+            should_send, reason = self.suppressor.should_send(
+                key, current_state,
+                container_name=container_name,
+                portainer_client=self.portainer_client,
+                endpoint_id=endpoint_id
+            )
             if DEBUG_MODE:
-                print(f"[DEBUG] PortainerMonitor: suppression check key={key} state={state_norm} send={should_send} reason={reason}")
+                print(f"[DEBUG] PortainerMonitor: suppression check key={key} state={current_state} send={should_send} reason={reason}")
             if not should_send:
                 return
         except Exception as exc:

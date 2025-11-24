@@ -22,41 +22,68 @@ def extract_real_ip_and_source(labels):
             prometheus_source = candidate
             break
 
+    # Primeiro, tenta labels específicos do Prometheus com IP extraído
     ip_candidates = [
         labels.get('host_ip'),
         labels.get('real_host'),
         labels.get('__address__'),
-        labels.get('instance'),
-        labels.get('kubernetes_node'),
-        labels.get('node_name'),
-        labels.get('host'),
-        labels.get('hostname'),
-        labels.get('target'),
-        labels.get('exported_instance'),
-        labels.get('server_name'),
     ]
 
+    # Procura por IPs já extraídos (sem porta)
     for candidate in ip_candidates:
         if candidate and candidate not in ['N/A', '', 'localhost', '127.0.0.1']:
-            ip_match = re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', str(candidate))
+            ip_match = re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$', str(candidate))
             if ip_match:
                 real_ip = ip_match.group(1)
                 break
-            elif ':' in str(candidate) and not str(candidate).startswith('node-exporter'):
-                potential_ip = str(candidate).split(':')[0]
-                if re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$', potential_ip):
-                    real_ip = potential_ip
-                    break
-                elif len(potential_ip) > 3 and not potential_ip.startswith('node'):
-                    real_ip = potential_ip
-                    break
 
-    return {
+    # Se não encontrou, tenta extrair de campos que podem conter IP:porta
+    if not real_ip:
+        ip_port_candidates = [
+            labels.get('instance'),
+            labels.get('kubernetes_node'),
+            labels.get('node_name'),
+            labels.get('host'),
+            labels.get('hostname'),
+            labels.get('target'),
+            labels.get('exported_instance'),
+            labels.get('server_name'),
+        ]
+
+        for candidate in ip_port_candidates:
+            if candidate and candidate not in ['N/A', '', 'localhost', '127.0.0.1', 'localhost:9100']:
+                # Tenta extrair IP de formatos como "192.168.1.100:9100"
+                if ':' in str(candidate):
+                    potential_ip = str(candidate).split(':')[0]
+                    # Valida se é um IP válido
+                    if re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$', potential_ip):
+                        real_ip = potential_ip
+                        break
+                    # Ou se é um hostname válido (não começando com 'node-exporter' ou 'node')
+                    elif len(potential_ip) > 3 and not potential_ip.startswith(('node-exporter', 'node')):
+                        real_ip = potential_ip
+                        break
+                else:
+                    # Tenta extrair IP direto (sem porta)
+                    ip_match = re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', str(candidate))
+                    if ip_match:
+                        real_ip = ip_match.group(1)
+                        break
+
+    result = {
         'real_ip': real_ip,
         'prometheus_source': prometheus_source,
         'original_instance': original_instance,
         'clean_host': real_ip if real_ip else original_instance.split(':')[0] if ':' in original_instance else original_instance,
     }
+    
+    # Debug: mostra quais labels foram usados para extrair o IP
+    if not real_ip or real_ip == 'unknown':
+        import os
+        if os.getenv("DEBUG_MODE", "False").lower() == "true":
+            print(f"[DEBUG] Falha ao extrair IP. Labels disponíveis: instance={labels.get('instance')}, host_ip={labels.get('host_ip')}, real_host={labels.get('real_host')}")
+    
+    return result
 
 
 def build_server_location(enriched_info, labels):

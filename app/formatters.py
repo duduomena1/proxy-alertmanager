@@ -115,7 +115,14 @@ Values: {json.dumps(values, indent=2)}
         mapped = portainer_client.get_host_for_endpoint(portainer_result.get('endpoint_id'))
         if mapped:
             server_ip = mapped
-    server_info = f"`{server_ip}`" if server_ip else (f"`{real_ip}`" if real_ip else f"`{clean_host}`")
+    
+    # Prioridade: server_ip do Portainer > real_ip > clean_host (que já tem fallback para instance)
+    # Garante que sempre teremos um IP para exibir
+    display_ip = server_ip or real_ip or clean_host or labels.get('instance', 'IP não identificado')
+    if display_ip and ':' in str(display_ip):
+        display_ip = display_ip.split(':')[0]  # Remove porta se houver
+    
+    server_info = f"`{display_ip}`"
     if container_info.get('node'):
         server_info += f" (Node: `{container_info.get('node')}`)"
 
@@ -154,6 +161,12 @@ Values: {json.dumps(values, indent=2)}
     parts.append("\n**🏷️ IDENTIFICAÇÃO**")
     parts.append(f"**Container:** `{container_name}`")
     parts.append(f"**Servidor/Host:** {server_info}")
+    
+    # Adiciona o campo de instância original para referência
+    original_instance = enriched_info.get('original_instance')
+    if original_instance and original_instance != display_ip and original_instance not in ['N/A', 'unknown']:
+        parts.append(f"**Instância:** `{original_instance}`")
+    
     parts.append(f"**Prometheus:** `{prometheus_source}`{portainer_section}")
 
     # STATUS ATUAL: só se houver namespace

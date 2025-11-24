@@ -33,6 +33,9 @@ CONTAINER_SUPPRESS_TTL_SECONDS = int(os.getenv("CONTAINER_SUPPRESS_TTL_SECONDS",
 _paused_allowlist_env = os.getenv("CONTAINER_PAUSED_ALLOWLIST", "").strip()
 CONTAINER_PAUSED_ALLOWLIST = set([s.strip() for s in _paused_allowlist_env.split(",") if s.strip()])
 
+# Supressão Blue/Green deployment
+BLUE_GREEN_SUPPRESSION_ENABLED = os.getenv("BLUE_GREEN_SUPPRESSION_ENABLED", "true").lower() == "true"
+
 # Containers que NUNCA devem ser suprimidos (sempre notificar)
 _always_notify_allowlist_env = os.getenv("CONTAINER_ALWAYS_NOTIFY_ALLOWLIST", "").strip()
 CONTAINER_ALWAYS_NOTIFY_ALLOWLIST = set([s.strip() for s in _always_notify_allowlist_env.split(",") if s.strip()])

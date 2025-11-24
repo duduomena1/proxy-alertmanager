@@ -42,6 +42,20 @@ Comportamento:
 - Próximas falhas com o mesmo estado (sem ter passado por `running`) → suprimidas.
 - Quando o container voltar a `running` → supressão é resetada; um novo down voltará a alertar.
 
+### Supressão Blue/Green Deployment
+
+- BLUE_GREEN_SUPPRESSION_ENABLED (default: true)
+  - Habilita supressão inteligente para deployments blue/green: se um container cai (ex: `app-blue`) mas seu par (ex: `app-green`) está rodando no mesmo endpoint, o alerta é suprimido.
+  - Suporta padrões de nomenclatura: `app-blue`/`app-green`, `app_blue`/`app_green` (case-insensitive).
+  - Se ambos os containers do par caírem, os alertas são enviados normalmente.
+  - Requer `CONTAINER_VALIDATE_WITH_PORTAINER=true` para funcionar.
+
+Exemplos de containers detectados:
+
+- `nginx-blue` ↔ `nginx-green`
+- `api_blue` ↔ `api_green`
+- `WORKER-BLUE` ↔ `WORKER-GREEN` (case-insensitive)
+
 ## 🔁 Integração com Portainer
 
 - CONTAINER_VALIDATE_WITH_PORTAINER (default: false)
@@ -101,6 +115,7 @@ CONTAINER_SUPPRESS_REPEATS=true
 CONTAINER_SUPPRESS_TTL_SECONDS=86400
 CONTAINER_PAUSED_ALLOWLIST=nginx_paused,batch-worker
 CONTAINER_ALWAYS_NOTIFY_ALLOWLIST=api-prod,worker-1,nginx-edge
+BLUE_GREEN_SUPPRESSION_ENABLED=true
 
 # Portainer
 CONTAINER_VALIDATE_WITH_PORTAINER=true

@@ -204,7 +204,20 @@ def create_app():
                     container_name = container_info.get('container_name') or labels.get('container') or labels.get('container_name')
                     host_key = real_ip or clean_host
                     key = build_container_key(host_key, labels)
-                    should_send, reason = container_suppressor.should_send(key, current_state, container_name=container_name)
+                    
+                    # Resolver endpoint_id para verificação blue/green
+                    endpoint_id = None
+                    if portainer_client.enabled and portainer_result:
+                        host_for_endpoint = real_ip if real_ip and real_ip != 'unknown' else clean_host
+                        if host_for_endpoint and host_for_endpoint != 'unknown':
+                            endpoint_id = portainer_client.resolve_endpoint(host_for_endpoint)
+                    
+                    should_send, reason = container_suppressor.should_send(
+                        key, current_state, 
+                        container_name=container_name,
+                        portainer_client=portainer_client if portainer_client.enabled else None,
+                        endpoint_id=endpoint_id
+                    )
                     if DEBUG_MODE:
                         print(f"[DEBUG] Container suppression check: key={key} state={current_state} send={should_send} reason={reason}")
                     if not should_send:

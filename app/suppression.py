@@ -1,5 +1,7 @@
 import time
-from typing import Dict, Optional, Tuple
+import re
+import logging
+from typing import Dict, Optional, Tuple, TYPE_CHECKING
 
 from .constants import (
     CONTAINER_SUPPRESS_REPEATS,
@@ -7,7 +9,13 @@ from .constants import (
     CONTAINER_PAUSED_ALLOWLIST,
     CONTAINER_ALWAYS_NOTIFY_ALLOWLIST,
     CONTAINER_IGNORE_ALLOWLIST,
+    BLUE_GREEN_SUPPRESSION_ENABLED,
 )
+
+if TYPE_CHECKING:
+    from .portainer import PortainerClient
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_name(value: Optional[str]) -> str:
@@ -64,6 +72,104 @@ def compute_state(portainer_result: Optional[Dict], metric_value: Optional[float
     return 'unknown'
 
 
+def extract_blue_green_base(container_name: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Detecta se o container segue padrão blue/green e extrai o nome base.
+    Suporta: app-blue, app-green, app_blue, app_green (case-insensitive).
+    
+    Returns:
+        (base_name, color) onde color é 'blue' ou 'green', ou (None, None) se não for blue/green.
+    
+    Exemplos:
+        'nginx-blue' -> ('nginx', 'blue')
+        'API_GREEN' -> ('api', 'green')
+        'app-v1' -> (None, None)
+    """
+    if not container_name:
+        return None, None
+    
+    # Regex para detectar sufixo -blue/-green ou _blue/_green (case-insensitive)
+    pattern = r'^(.+?)[-_](blue|green)$'
+    match = re.match(pattern, container_name, re.IGNORECASE)
+    
+    if match:
+        base_name = match.group(1).lower()
+        color = match.group(2).lower()
+        logger.debug(f"Container '{container_name}' detectado como blue/green: base='{base_name}', color='{color}'")
+        return base_name, color
+    
+    return None, None
+
+
+def find_active_sibling(container_name: str, endpoint_id: Optional[int], portainer_client: Optional['PortainerClient']) -> Tuple[bool, Optional[str]]:
+    """
+    Verifica se o sibling blue/green do container está ativo no mesmo endpoint.
+    
+    Args:
+        container_name: Nome do container (ex: 'app-blue')
+        endpoint_id: ID do endpoint Portainer
+        portainer_client: Cliente Portainer para consultar containers
+    
+    Returns:
+        (sibling_is_active, sibling_name) onde sibling_is_active indica se o par está running.
+    
+    Exemplos:
+        'app-blue' com 'app-green' running -> (True, 'app-green')
+        'app-blue' com 'app-green' down -> (False, 'app-green')
+        'nginx' sem padrão blue/green -> (False, None)
+    """
+    if not BLUE_GREEN_SUPPRESSION_ENABLED:
+        logger.debug("Blue/green suppression desabilitado (BLUE_GREEN_SUPPRESSION_ENABLED=false)")
+        return False, None
+    
+    if not portainer_client or endpoint_id is None:
+        logger.debug(f"Portainer não disponível para verificar sibling de '{container_name}'")
+        return False, None
+    
+    base_name, color = extract_blue_green_base(container_name)
+    if not base_name or not color:
+        # Não é um container blue/green
+        return False, None
+    
+    # Determinar o nome do sibling (trocar blue <-> green)
+    sibling_color = 'green' if color == 'blue' else 'blue'
+    
+    # Reconstruir possíveis nomes do sibling (preservar separador original)
+    # Detectar separador usado no nome original
+    separator = '-' if '-' in container_name[-6:] else '_'  # Últimos 6 chars devem conter o separador
+    sibling_name = f"{base_name}{separator}{sibling_color}"
+    
+    logger.debug(f"Procurando sibling '{sibling_name}' para container '{container_name}' no endpoint {endpoint_id}")
+    
+    try:
+        # Listar todos os containers do endpoint
+        containers = portainer_client.list_containers(endpoint_id, all=True)
+        
+        # Procurar o sibling e verificar seu estado
+        for container in containers:
+            # Docker API retorna Names como lista ['/nome'] ou campo Name
+            container_names = container.get('Names', [])
+            if isinstance(container_names, list):
+                container_names = [n.lstrip('/') for n in container_names]
+            else:
+                container_names = [container.get('Name', '').lstrip('/')]
+            
+            # Comparar case-insensitive
+            for name in container_names:
+                if name.lower() == sibling_name.lower():
+                    state = container.get('State', '').lower()
+                    is_running = state == 'running'
+                    logger.debug(f"Sibling '{name}' encontrado com estado '{state}' (running={is_running})")
+                    return is_running, name
+        
+        logger.debug(f"Sibling '{sibling_name}' não encontrado no endpoint {endpoint_id}")
+        return False, sibling_name
+        
+    except Exception as e:
+        logger.warning(f"Erro ao verificar sibling blue/green para '{container_name}': {e}")
+        return False, None
+
+
 class ContainerSuppressor:
     """
     State machine simples por container para suprimir alertas repetidos.
@@ -90,9 +196,17 @@ class ContainerSuppressor:
         for k in to_delete:
             self._store.pop(k, None)
 
-    def should_send(self, key: str, current_state: str, container_name: Optional[str] = None) -> Tuple[bool, str]:
+    def should_send(self, key: str, current_state: str, container_name: Optional[str] = None, 
+                    portainer_client: Optional['PortainerClient'] = None, endpoint_id: Optional[int] = None) -> Tuple[bool, str]:
         """
         Retorna (deve_enviar, motivo). Quando suprime, motivo explica.
+        
+        Args:
+            key: Chave única do container
+            current_state: Estado atual ('running', 'down', etc.)
+            container_name: Nome do container para verificações de allowlist e blue/green
+            portainer_client: Cliente Portainer para verificar sibling blue/green
+            endpoint_id: ID do endpoint Portainer onde o container está rodando
         """
         self._cleanup()
         if not self.enabled:
@@ -120,6 +234,16 @@ class ContainerSuppressor:
 
         # Estados problemáticos
         if current_state in self.FAILURE_STATES:
+            # VERIFICAÇÃO BLUE/GREEN: Se o sibling estiver ativo, suprimir alerta
+            if container_name and portainer_client and endpoint_id is not None:
+                sibling_active, sibling_name = find_active_sibling(container_name, endpoint_id, portainer_client)
+                if sibling_active and sibling_name:
+                    logger.info(f"Suprimindo alerta de '{container_name}': sibling '{sibling_name}' está ativo (blue/green deployment)")
+                    # Atualizar estado mas não ativar supressão (para permitir alerta se ambos caírem)
+                    entry.update({'last': current_state, 'ts': time.time(), 'suppressed': False})
+                    self._store[key] = entry
+                    return False, f'blue_green_sibling_active:{sibling_name}'
+            
             if entry.get('suppressed'):
                 # já alertou antes e não voltou a running
                 entry.update({'last': current_state, 'ts': time.time()})

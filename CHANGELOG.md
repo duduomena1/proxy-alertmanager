@@ -4,6 +4,36 @@ Todas as mudanças notáveis neste projeto serão documentadas aqui.
 
 O formato é baseado em Keep a Changelog e este projeto segue SemVer.
 
+## [1.2.0] - 2025-11-24
+
+### Added
+
+- **Supressão inteligente para deployments Blue/Green**:
+  - Detecta automaticamente pares de containers com nomenclatura `app-blue`/`app-green` ou `app_blue`/`app_green` (case-insensitive).
+  - Suprime alertas quando um container cai mas seu par está rodando no mesmo endpoint Portainer.
+  - Se ambos os containers do par caem, os alertas são enviados normalmente.
+  - Novas funções: `extract_blue_green_base()` e `find_active_sibling()` em `app/suppression.py`.
+- Nova variável de ambiente:
+  - `BLUE_GREEN_SUPPRESSION_ENABLED` (default: true) — permite desabilitar a feature.
+- Logging detalhado (DEBUG) das decisões de supressão blue/green.
+- Testes automatizados para blue/green:
+  - Detecção de nomenclatura (hífen, underscore, case-insensitive).
+  - Supressão quando sibling está ativo.
+  - Alertas quando ambos caem.
+  - Comportamento com feature desabilitada.
+- Script de teste manual: `test/test_blue_green_manual.sh`.
+
+### Changed
+
+- `ContainerSuppressor.should_send()` agora aceita parâmetros `portainer_client` e `endpoint_id` para verificação blue/green.
+- Chamadas de supressão em `app/controller.py` e `app/portainer_monitor.py` atualizadas para passar cliente Portainer.
+- `docs/ENV_VARS.md` atualizado com documentação da feature blue/green.
+
+### Requirements
+
+- Requer `CONTAINER_VALIDATE_WITH_PORTAINER=true` para funcionar corretamente.
+- O par blue/green deve estar no mesmo endpoint Portainer.
+
 ## [1.1.0] - 2025-10-21
 
 ### Added
