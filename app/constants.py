@@ -30,6 +30,8 @@ PORTAINER_MONITOR_SCOPE = os.getenv("PORTAINER_MONITOR_SCOPE", "map").strip().lo
 # Supressão específica para containers
 CONTAINER_SUPPRESS_REPEATS = os.getenv("CONTAINER_SUPPRESS_REPEATS", "true").lower() == "true"
 CONTAINER_SUPPRESS_TTL_SECONDS = int(os.getenv("CONTAINER_SUPPRESS_TTL_SECONDS", "86400"))  # 24h
+CONTAINER_SUPPRESS_PERSIST = os.getenv("CONTAINER_SUPPRESS_PERSIST", "true").lower() == "true"
+CONTAINER_SUPPRESS_STATE_FILE = os.getenv("CONTAINER_SUPPRESS_STATE_FILE", "/tmp/proxy-alertmanager-suppression-state.json")
 _paused_allowlist_env = os.getenv("CONTAINER_PAUSED_ALLOWLIST", "").strip()
 CONTAINER_PAUSED_ALLOWLIST = set([s.strip() for s in _paused_allowlist_env.split(",") if s.strip()])
 

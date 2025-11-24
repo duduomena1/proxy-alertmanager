@@ -1,11 +1,15 @@
 import time
 import re
 import logging
+import json
+import os
 from typing import Dict, Optional, Tuple, TYPE_CHECKING
 
 from .constants import (
     CONTAINER_SUPPRESS_REPEATS,
     CONTAINER_SUPPRESS_TTL_SECONDS,
+    CONTAINER_SUPPRESS_PERSIST,
+    CONTAINER_SUPPRESS_STATE_FILE,
     CONTAINER_PAUSED_ALLOWLIST,
     CONTAINER_ALWAYS_NOTIFY_ALLOWLIST,
     CONTAINER_IGNORE_ALLOWLIST,
@@ -182,10 +186,50 @@ class ContainerSuppressor:
 
     FAILURE_STATES = {'down', 'restarting', 'exited', 'dead', 'unknown', 'stopped', 'created'}
 
-    def __init__(self, ttl_seconds: int = CONTAINER_SUPPRESS_TTL_SECONDS, enabled: bool = CONTAINER_SUPPRESS_REPEATS):
+    def __init__(self, ttl_seconds: int = CONTAINER_SUPPRESS_TTL_SECONDS, enabled: bool = CONTAINER_SUPPRESS_REPEATS, 
+                 persist: bool = CONTAINER_SUPPRESS_PERSIST, state_file: str = CONTAINER_SUPPRESS_STATE_FILE):
         self.enabled = enabled
         self.ttl = ttl_seconds
+        self.persist = persist
+        self.state_file = state_file
         self._store: Dict[str, Dict] = {}
+        
+        # Carrega estado persistido (se habilitado)
+        if self.persist:
+            self._load_state()
+
+    def _load_state(self):
+        """Carrega estado de supressão de arquivo JSON."""
+        if not os.path.exists(self.state_file):
+            return
+        
+        try:
+            with open(self.state_file, 'r') as f:
+                data = json.load(f)
+                # Carrega apenas entradas ainda válidas (dentro do TTL)
+                now = time.time()
+                for key, entry in data.items():
+                    if isinstance(entry, dict) and 'ts' in entry:
+                        if (now - entry.get('ts', now)) <= self.ttl:
+                            self._store[key] = entry
+                
+                logger.info(f"Estado de supressão carregado: {len(self._store)} containers suprimidos")
+        except Exception as e:
+            logger.warning(f"Falha ao carregar estado de supressão: {e}")
+
+    def _save_state(self):
+        """Salva estado de supressão em arquivo JSON."""
+        if not self.persist:
+            return
+        
+        try:
+            # Garante que o diretório existe
+            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+            
+            with open(self.state_file, 'w') as f:
+                json.dump(self._store, f, indent=2)
+        except Exception as e:
+            logger.warning(f"Falha ao salvar estado de supressão: {e}")
 
     def _cleanup(self):
         now = time.time()
@@ -195,6 +239,10 @@ class ContainerSuppressor:
                 to_delete.append(k)
         for k in to_delete:
             self._store.pop(k, None)
+        
+        # Salva estado após limpeza (se habilitado)
+        if to_delete and self.persist:
+            self._save_state()
 
     def should_send(self, key: str, current_state: str, container_name: Optional[str] = None, 
                     portainer_client: Optional['PortainerClient'] = None, endpoint_id: Optional[int] = None) -> Tuple[bool, str]:
@@ -223,6 +271,7 @@ class ContainerSuppressor:
         if current_state == 'paused' and name_norm in { _normalize_name(n) for n in CONTAINER_PAUSED_ALLOWLIST }:
             # Mantém registro mas não ativa supressão
             self._store[key] = {'suppressed': False, 'last': 'paused', 'ts': time.time()}
+            self._save_state()
             return False, 'paused_allowlisted'
 
         entry = self._store.get(key, {'suppressed': False, 'last': 'unknown', 'ts': 0})
@@ -230,6 +279,7 @@ class ContainerSuppressor:
         # Reset ao ver running
         if current_state == 'running':
             self._store[key] = {'suppressed': False, 'last': 'running', 'ts': time.time()}
+            self._save_state()
             return False, 'reset_on_running'
 
         # Estados problemáticos
@@ -242,18 +292,22 @@ class ContainerSuppressor:
                     # Atualizar estado mas não ativar supressão (para permitir alerta se ambos caírem)
                     entry.update({'last': current_state, 'ts': time.time(), 'suppressed': False})
                     self._store[key] = entry
+                    self._save_state()
                     return False, f'blue_green_sibling_active:{sibling_name}'
             
             if entry.get('suppressed'):
                 # já alertou antes e não voltou a running
                 entry.update({'last': current_state, 'ts': time.time()})
                 self._store[key] = entry
+                self._save_state()
                 return False, 'already_suppressed_until_running'
             # primeira falha desde último running -> envia e ativa supressão
             self._store[key] = {'suppressed': True, 'last': current_state, 'ts': time.time()}
+            self._save_state()
             return True, 'first_failure_since_running'
 
         # Outros estados desconhecidos: não envia por padrão
         entry.update({'last': current_state, 'ts': time.time()})
         self._store[key] = entry
+        self._save_state()
         return False, 'non_failure_state'

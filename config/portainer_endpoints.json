@@ -38,5 +38,11 @@
   "192.168.255.207": { "id": 15, "ssh_user": "dev" },
 
   "AMC-SUPERSET-PROD": { "id": 16, "ssh_user": "dev" },
-  "192.168.255.213": { "id": 16, "ssh_user": "dev" }
+  "192.168.255.213": { "id": 16, "ssh_user": "dev" },
+
+  "FOCO|RJ": { "id": 18, "ssh_user": "root"},
+  "104.131.71.80": { "id": 18, "ssh_user": "root"},
+
+  "TATICO-PB-NOVO": { "id": 19, "ssh_user": "ipq"},
+  "192.168.191.194": { "id": 19, "ssh_user": "ipq"}
 }

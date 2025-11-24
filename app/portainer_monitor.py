@@ -260,7 +260,7 @@ class PortainerMonitor(threading.Thread):
             should_send, reason = self.suppressor.should_send(
                 key, current_state,
                 container_name=container_name,
-                portainer_client=self.portainer_client,
+                portainer_client=portainer_client,
                 endpoint_id=endpoint_id
             )
             if DEBUG_MODE:

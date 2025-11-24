@@ -28,19 +28,29 @@ Este documento lista todas as variáveis de ambiente suportadas pelo projeto, se
 - CONTAINER_SUPPRESS_REPEATS (default: true)
   - Habilita a máquina de estados que evita reenvio enquanto o container não voltar a `running`.
 - CONTAINER_SUPPRESS_TTL_SECONDS (default: 86400)
-  - TTL do estado em memória. Após esse tempo sem eventos, o estado é limpo.
+  - TTL do estado. Após esse tempo sem eventos, o estado é limpo.
+- **CONTAINER_SUPPRESS_PERSIST** (default: true) 🆕
+  - Habilita persistência do estado de supressão em arquivo JSON.
+  - **Benefício**: Ao fazer rebuild/restart da aplicação, não reenvia alertas de containers já conhecidos como down.
+- **CONTAINER_SUPPRESS_STATE_FILE** (default: /tmp/proxy-alertmanager-suppression-state.json) 🆕
+  - Caminho do arquivo onde o estado de supressão é salvo.
+  - **Recomendação**: Em produção, use um volume persistente (ex: `/var/lib/proxy-alertmanager/suppression-state.json`).
 - CONTAINER_PAUSED_ALLOWLIST (default: "")
   - Lista separada por vírgula com nomes/IDs de containers que podem ficar `paused` sem alertar, e sem ativar supressão.
   - Ex.: CONTAINER_PAUSED_ALLOWLIST=nginx_paused,batch-worker
 - CONTAINER_ALWAYS_NOTIFY_ALLOWLIST (default: "")
   - Lista separada por vírgula com nomes/IDs de containers que NUNCA devem ser suprimidos: sempre enviar alerta, mesmo que repetido ou dentro do cooldown de dedupe.
   - Ex.: CONTAINER_ALWAYS_NOTIFY_ALLOWLIST=api-prod,worker-1,nginx-edge
+- CONTAINER_IGNORE_ALLOWLIST (default: "")
+  - Lista separada por vírgula com nomes/IDs de containers que devem ser completamente ignorados (sem alertas em nenhum estado).
+  - Ex.: CONTAINER_IGNORE_ALLOWLIST=test-container,tmp-worker
 
 Comportamento:
 
 - Primeira falha (down/restarting/exited/...) → envia alerta e ativa supressão.
 - Próximas falhas com o mesmo estado (sem ter passado por `running`) → suprimidas.
 - Quando o container voltar a `running` → supressão é resetada; um novo down voltará a alertar.
+- **Com persistência habilitada**: Estado sobrevive ao restart da aplicação → sem spam de alertas após rebuild! 🎉
 
 ### Supressão Blue/Green Deployment
 
