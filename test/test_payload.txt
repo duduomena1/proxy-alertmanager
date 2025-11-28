@@ -1,7 +1,0 @@
-CONTAINER_ALERT_START
-alertname: ContainerDown
-status: firing
-container_name: nginx-test
-host_ip: 192.168.1.100
-value_A: 0
-CONTAINER_ALERT_END

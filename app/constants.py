@@ -21,13 +21,13 @@ PORTAINER_ENDPOINT_MAP_FILE = os.getenv("PORTAINER_ENDPOINT_MAP_FILE")
 PORTAINER_STRICT_NAME_MATCH = os.getenv("PORTAINER_STRICT_NAME_MATCH", "false").lower() == "true"
 
 # Monitoramento ativo via Portainer (polling)
-PORTAINER_ACTIVE_MONITOR = os.getenv("PORTAINER_ACTIVE_MONITOR", "false").lower() == "true"
+PORTAINER_ACTIVE_MONITOR = os.getenv("PORTAINER_ACTIVE_MONITOR", "true").lower() == "true"
 PORTAINER_MONITOR_INTERVAL_SECONDS = int(os.getenv("PORTAINER_MONITOR_INTERVAL_SECONDS", "30"))
 PORTAINER_MONITOR_ENDPOINTS = os.getenv("PORTAINER_MONITOR_ENDPOINTS", "").strip()
 PORTAINER_MONITOR_DOWN_CONFIRMATIONS = int(os.getenv("PORTAINER_MONITOR_DOWN_CONFIRMATIONS", "1"))
 PORTAINER_MONITOR_SCOPE = os.getenv("PORTAINER_MONITOR_SCOPE", "map").strip().lower()  # 'map' | 'all'
 # Se true, PortainerMonitor é a ÚNICA fonte de alertas de container (ignora alertas de container do Grafana)
-PORTAINER_MONITOR_ONLY_SOURCE = os.getenv("PORTAINER_MONITOR_ONLY_SOURCE", "false").lower() == "true"
+PORTAINER_MONITOR_ONLY_SOURCE = os.getenv("PORTAINER_MONITOR_ONLY_SOURCE", "true").lower() == "true"
 
 # Supressão específica para containers
 CONTAINER_SUPPRESS_REPEATS = os.getenv("CONTAINER_SUPPRESS_REPEATS", "true").lower() == "true"

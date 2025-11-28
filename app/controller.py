@@ -181,18 +181,6 @@ def create_app():
                         container_name = labels.get('container') or labels.get('container_name') or 'unknown'
                         print(f"[DEBUG] Alerta de container '{container_name}' do Grafana IGNORADO (PORTAINER_MONITOR_ONLY_SOURCE=true)")
                     continue
-                
-                if portainer_client.enabled:
-                    host_for_portainer = real_ip if real_ip and real_ip != 'unknown' else clean_host
-                    if not host_for_portainer or host_for_portainer == 'unknown':
-                        host_for_portainer = None
-                    try:
-                        portainer_result = portainer_client.verify_container(host_for_portainer, labels)
-                    except Exception as exc:
-                        if DEBUG_MODE:
-                            print(f"[DEBUG] Falha ao consultar Portainer: {exc}")
-                        portainer_result = portainer_client.verify_container(None, labels)
-                        portainer_result['error'] = f'exception:{exc}'
 
                 content = format_container_alert(
                     alert_data,
@@ -203,7 +191,7 @@ def create_app():
                     description,
                     severity_config,
                     get_metric_value,
-                    portainer_result=portainer_result,
+                    portainer_result=None,  # Grafana não consulta Portainer, apenas formata
                 )
 
                 # LÓGICA DE SUPRESSÃO POR ESTADO (apenas containers)

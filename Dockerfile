@@ -20,8 +20,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 ## Copia código da aplicação modular
 COPY app ./app
 COPY main.py ./
-## Mantém o wrapper para compatibilidade (opcional)
-COPY discord_proxy.py ./
 ## Copia configs (inclui portainer_endpoints.json)
 COPY config ./config
 
@@ -31,9 +29,11 @@ ENV PYTHONPATH=/app
 ENV DEBUG_MODE=false
 ENV FLASK_ENV=production
 
-# Cria usuário não-root
+# Cria usuário não-root e diretório de dados
 RUN adduser --disabled-password --gecos '' --uid 1000 appuser && \
-    chown -R appuser:appuser /app
+    chown -R appuser:appuser /app && \
+    mkdir -p /app/data && \
+    chown -R appuser:appuser /app/data
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

@@ -1,580 +1,214 @@
 # 🚀 Grafana Discord Proxy
 
-Um proxy inteligente e avançado para enviar alertas do Grafana para o Discord com análise automatizada de containers, templates flexíveis e formatação elegante.
+Sistema de monitoramento que integra Grafana, Prometheus e Portainer para enviar alertas formatados ao Discord.
 
-## ✨ Características Principais
+## ✨ Características
 
-- 🧠 **Análise Inteligente de Containers**: Detecta automaticamente status DOWN/UP e filtra alertas desnecessários
-- 🎯 **Duplo Endpoint**: Suporte para alertas JSON padrão (`/alert`) e templates minimalistas (`/alert_minimal`)
-- 🎨 **Templates Personalizáveis**: Templates Grafana livres de erros de função (`float64`, `regex`, etc.)
-- 📱 **Formatação Rica**: Mensagens organizadas com informações detalhadas do ambiente
-- 🐳 **Container Ready**: Análise específica para Kubernetes, Docker Swarm e containers standalone
-- 🔧 **Configuração Flexível**: Variáveis de ambiente para todas as personalizações
-- 🔍 **Debug Avançado**: Logs detalhados para troubleshooting e análise
+- 🔍 **Monitoramento Ativo via Portainer**: Detecta containers DOWN/UP em tempo real (30s)
+- 📊 **Alertas do Grafana**: CPU, Memória, Disco formatados
+- 🛡️ **Supressão Inteligente**: Evita spam com persistência entre restarts
+- 🔄 **Blue/Green Deployment**: Supressão automática quando sibling está ativo
+- 💾 **Persistência**: Estado mantido em volume Docker
 
-## 🧭 Sumário
+## 🎯 Arquitetura
 
-- Visão geral e recursos
-- Instalação e configuração
-- Endpoints
-- Templates prontos
-- Testes automatizados
-- Exemplos de saída
-- Configuração avançada (variáveis de ambiente)
-- Supressão de containers por estado
-- Integração com Portainer
-- Deploy
-- Troubleshooting
-- Documentação completa:
-  - Referência de variáveis: `docs/ENV_VARS.md`
-  - Supressão por estado: `docs/CONTAINER_SUPPRESSION.md`
-  - Integração Portainer: `docs/PORTAINER_INTEGRATION.md`
-  - Changelog: `CHANGELOG.md`
-
-## 🚦 Tipos de Alertas Suportados
-
-| Tipo | Emoji | Detecta por | Análise Especial |
-|------|--------|-------------|------------------|
-| **CPU** | 🖥️ | `cpu`, `processor`, `load` | Extração automática de valores % |
-| **Memória** | 💾 | `memory`, `mem`, `ram` | Conversão de bytes para % |
-| **Disco** | 💿 | `disk`, `storage`, `filesystem` | Device e mountpoint detalhados |
-| **Container** | 🐳 | `container`, `docker`, `pod` | **Status inteligente DOWN/UP** |
-| **Padrão** | 🚨 | Outros tipos | Processamento genérico |
-
-## 🧠 Sistema Inteligente de Containers
-
-### Análise Automática de Status
-
-O proxy analisa automaticamente o status dos containers baseado em múltiplos fatores:
-
-```python
-# Critérios de análise:
-- value=0 + status=firing  → Container DOWN (ALERTA)
-- value=1 + status=resolved → Container UP (IGNORA)
-- value=0 + status=resolved → Container RECOVERING (IGNORA)
-- value=1 + status=firing → Container INSTÁVEL (ALERTA)
+```
+┌─────────────┐
+│   Grafana   │ → Alertas de CPU/Memória/Disco (webhook /alert)
+└─────────────┘   📍 Apenas formatação, NÃO verifica containers
+       ↓
+┌─────────────┐
+│  Portainer  │ → Monitor ativo de containers (polling 30s)
+└─────────────┘   🔍 Detecção UP/DOWN, 🛡️ Supressão inteligente
+       ↓
+┌─────────────┐
+│   Discord   │ ← Todas as notificações
+└─────────────┘
 ```
 
-### Informações Detalhadas
+**Separação de Responsabilidades:**
+- **Grafana**: Envia alertas de métricas → Proxy APENAS formata
+- **Portainer**: Monitor ativo de containers → Proxy detecta e alerta DOWN/UP
 
-Para containers DOWN, o sistema coleta automaticamente:
-
-- 🏷️ **Nome do Container**: `nginx-web-server`
-- 🖥️ **Node/Host**: `worker-node-01`
-- 📦 **Namespace**: `web-services`
-- 🎯 **IP da VM**: `192.168.1.200`
-- 📷 **Imagem**: `nginx:1.21-alpine`
-- ⚙️ **Job**: `cadvisor`
-- 🧭 **Prometheus**: `prometheus-main`
-
-## 🎯 Endpoints Disponíveis
-
-### 1. `/alert` - Endpoint Principal (Recomendado)
-
-```yaml
-# Grafana Contact Point
-url: http://seu-proxy:5001/alert
-method: POST
-content-type: application/json
-```
- 
-**Uso**: Alertas padrão do Grafana em formato JSON completo
-
-### 2. `/alert_minimal` - Endpoint para Templates
-
-```yaml
-# Grafana Contact Point com template customizado
-url: http://seu-proxy:5001/alert_minimal
-method: POST
-content-type: text/plain
-
-# Template exemplo:
-CONTAINER_ALERT_START
-alertname: {{ .CommonLabels.alertname }}
-status: {{ .Status }}
-container_name: {{ .CommonLabels.container }}
-host_ip: {{ .CommonLabels.host_ip }}
-value_A: {{ range .Alerts }}{{ .Values.A }}{{ end }}
-CONTAINER_ALERT_END
-```
- 
-**Uso**: Quando você precisa de controle total sobre os dados enviados
-
-### 3. `/health` - Health Check
+## 🚀 Quick Start
 
 ```bash
-curl http://seu-proxy:5001/health
-# Retorna: {"service":"grafana-discord-proxy","status":"ok"}
-```
-
-## 📋 Pré-requisitos
-
-- Docker e Docker Compose
-- Webhook do Discord configurado
-- Grafana 8.0+ com Contact Points configurados
-- Prometheus com métricas de container (cadvisor, kubelet, etc.)
-
-## ⚙️ Instalação e Configuração
-
-### 1. Clone e Configure
-
-```bash
-git clone https://github.com/duduomena1/proxy-alertmanager.git
+# 1. Clone e configure
+git clone <seu-repo>
 cd proxy-alertmanager
-
-# Copie o arquivo de exemplo
 cp .env.example .env
 
-# Edite as configurações
+# 2. Edite o .env com suas credenciais
 nano .env
-```
 
-### 2. Configure o Webhook do Discord
-
-```env
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/SEU_WEBHOOK_AQUI
-DEBUG_MODE=false
-APP_PORT=5001
-```
-
-### 3. Execute com Docker
-
-```bash
-# Build e start
+# 3. Suba o container
 docker-compose up -d
 
-# Verificar logs
-docker-compose logs -f grafana-discord-proxy
-
-# Verificar status
-docker-compose ps
+# 4. Verifique logs
+docker logs grafana-discord-proxy-prod -f
 ```
 
-### 4. Configure o Grafana
-
-#### Opção A: Alertas Padrão (Simples)
-
-```yaml
-# Contact Point no Grafana
-Type: Webhook
-URL: http://IP_DO_SERVIDOR:5001/alert
-HTTP Method: POST
-```
-
-#### Opção B: Com Template Customizado
-
-```yaml
-# Contact Point no Grafana  
-Type: Webhook
-URL: http://IP_DO_SERVIDOR:5001/alert_minimal
-HTTP Method: POST
-
-# Use os templates em /templates/ para evitar erros
-```
-
-## 📁 Templates Prontos
-
-O projeto inclui templates testados e livres de erros:
-
-```text
-templates/
-├── container-template-minimal.yml    # Template para containers
-├── CPU-template .yml                 # Template para CPU
-├── memory-template-minimal.yml       # Template para memória  
-├── disk-template-minimal.yml         # Template para disco
-└── prometheus.yaml                   # Config do Prometheus
-```
-
-### Exemplo de Template de Container
-
-```yaml
-# container-template-minimal.yml
-CONTAINER_ALERT_START
-alertname: {{ .CommonLabels.alertname }}
-status: {{ .Status }}
-startsAt: {{ .Alerts.StartsAt }}
-container: {{ .CommonLabels.container }}
-container_name: {{ .CommonLabels.container_name }}
-namespace: {{ .CommonLabels.namespace }}
-node: {{ .CommonLabels.node }}
-host_ip: {{ .CommonLabels.host_ip }}
-image: {{ .CommonLabels.image }}
-value_A: {{ range .Alerts }}{{ .Values.A }}{{ end }}
-CONTAINER_ALERT_END
-```
-
-## 🧪 Testes Automatizados
-
-O projeto inclui um conjunto completo de testes:
+## 📋 Variáveis Principais
 
 ```bash
-test/
-├── test_alerts.sh              # Teste geral de alertas
-├── test_container_down_vs_up.sh # Teste específico containers
-├── test_container_detailed.sh   # Análise detalhada containers
-├── test_config.sh              # Configurações de teste
-├── validacao_final.sh          # Validação completa
-└── *.json                      # Payloads de teste
-```
-
-### Executando Testes
-
-```bash
-# Teste específico de containers
-./test/test_container_down_vs_up.sh
-
-# Teste detalhado com análise
-./test/test_container_detailed.sh
-
-# Teste geral
-./test/test_alerts.sh
-```
-
-## 📊 Exemplos de Saída
-
-### Alerta de Container DOWN
-
-```text
-🐳 **CONTAINER CRÍTICO** 🔴
-
-**Container:** `nginx-web-server`
-**Status:** Container está PARADO e não responde
-**Severidade:** `CRÍTICO`
-
-📦 **Namespace:** `web-services`
-🖥️ **Node:** `worker-node-01`
-⚙️ **Job:** `cadvisor`
-🏷️ **Image:** `nginx:1.21-alpine`
-
-⏰ **Início:** 2025-10-14T18:45:00Z
-🔧 **Config:** Prometheus: prometheus-main | Job: cadvisor | Env: production
-```
-
-### Alerta de Disco
-
-```text
-� **DISCO ALERTA** �
-
-📊 **Uso de DISCO:** 83.3% (🚧 ALERTA)
-🖥️ **Servidor:** 192.168.1.100
-💾 **Device:** /dev/sda1
-📁 **Mountpoint:** /var/lib/docker
-
-⏰ **Início:** 2025-10-14T18:45:00Z
-🔧 **Config:** Prometheus: prometheus-main | Service: node-exporter
-```
-
-## 🔧 Configuração Avançada
-
-### Variáveis de Ambiente
-
-```env
-# Básico
+# Discord (obrigatório)
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+
+# Portainer (obrigatório)
+PORTAINER_BASE_URL=http://portainer:9000
+PORTAINER_API_KEY=ptr_xxx...
+
+# Monitoramento Ativo (recomendado)
+PORTAINER_ACTIVE_MONITOR=true
+PORTAINER_MONITOR_ONLY_SOURCE=true
+PORTAINER_MONITOR_INTERVAL_SECONDS=30
+
+# Supressão (padrão: habilitado)
+CONTAINER_SUPPRESS_REPEATS=true
+CONTAINER_SUPPRESS_TTL_SECONDS=86400  # 24h
+CONTAINER_SUPPRESS_PERSIST=true
+
+# Blue/Green
+BLUE_GREEN_SUPPRESSION_ENABLED=true
+
+# Debug
 DEBUG_MODE=false
-APP_PORT=5001
-
-# Cores por Severidade (formato decimal)
-CPU_LOW_COLOR=16776960          # Amarelo
-CPU_MEDIUM_COLOR=16753920       # Laranja  
-CPU_HIGH_COLOR=16711680         # Vermelho
-
-# GIFs por Tipo de Alerta
-CPU_LOW_GIF=https://giphy.com/...
-MEMORY_MEDIUM_GIF=https://giphy.com/...
-CONTAINER_DOWN_GIF=https://giphy.com/...
-CONTAINER_UP_COLOR=65280
-CONTAINER_UP_GIF=https://giphy.com/...
-
-# Supressão por estado (containers)
-CONTAINER_SUPPRESS_REPEATS=true
-CONTAINER_SUPPRESS_TTL_SECONDS=86400
-CONTAINER_PAUSED_ALLOWLIST=nginx_paused,batch-worker
-
-# Portainer (opcional)
-CONTAINER_VALIDATE_WITH_PORTAINER=true
-PORTAINER_BASE_URL=https://portainer.local/api
-PORTAINER_API_KEY=xxxxxxxx
-PORTAINER_ENDPOINT_MAP_FILE=config/portainer_endpoints.json
-PORTAINER_ACTIVE_MONITOR=true
 ```
 
-Para a lista completa e explicações detalhadas, consulte: `docs/ENV_VARS.md`.
+## 🔧 Endpoints
 
-### Supressão de containers por estado
+- **GET** `/health` - Health check
+- **POST** `/alert` - Alertas do Grafana (formato JSON padrão)
+- **POST** `/alert_minimal` - Alertas do Grafana (formato minimal template)
 
-O proxy “trava” alertas repetidos enquanto o container não voltar para `running`. Assim, loops de `restarting` não ficam re-alertando. Configure:
+## 📖 Configuração Grafana
 
-```env
-CONTAINER_SUPPRESS_REPEATS=true
-CONTAINER_SUPPRESS_TTL_SECONDS=86400
-CONTAINER_PAUSED_ALLOWLIST=nginx_paused,batch-worker
-```
-
-Veja o guia completo em `docs/CONTAINER_SUPPRESSION.md`.
-
-### Integração com Portainer
-
-- Validação do estado real do container ao processar alertas do Grafana
-- Monitoramento ativo que detecta quedas diretamente no Portainer
-
-Exemplo rápido:
-
-```env
-CONTAINER_VALIDATE_WITH_PORTAINER=true
-PORTAINER_BASE_URL=https://portainer.local/api
-PORTAINER_API_KEY=xxxxxxxx
-PORTAINER_ENDPOINT_MAP_FILE=config/portainer_endpoints.json
-PORTAINER_ACTIVE_MONITOR=true
-PORTAINER_MONITOR_SCOPE=map
-```
-
-Guia completo em `docs/PORTAINER_INTEGRATION.md`.
-
-### Configuração do Docker Compose
+### Contact Point
 
 ```yaml
-# docker-compose.yml
-services:
-  grafana-discord-proxy:
-    build: .
-    ports:
-      - "5001:5001"
-    environment:
-      - DEBUG_MODE=true
-    networks:
-      - grafana_observability
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+Name: Discord via Proxy
+Type: Webhook
+URL: http://seu-proxy:5001/alert
+Method: POST
 ```
 
-## 🐳 Deploy em Produção
+### Mapeamento Portainer
 
-### Com Docker Swarm
+Crie `config/portainer_endpoints.json`:
+
+```json
+{
+  "192.168.1.10": 1,
+  "192.168.1.20": 2,
+  "server-prod": 3
+}
+```
+
+Onde a chave é o `instance` do Prometheus e o valor é o `endpoint_id` do Portainer.
+
+## 🐳 Rebuild Rápido
 
 ```bash
-# Deploy no swarm
-docker stack deploy -c docker-compose.yml grafana-proxy
-
-# Verificar serviços
-docker service ls
+./rebuild.sh
 ```
 
-### Com Kubernetes
+## 🛠️ Como Funciona
 
-```yaml
-# k8s-deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: grafana-discord-proxy
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: grafana-discord-proxy
-  template:
-    spec:
-      containers:
-      - name: proxy
-        image: grafana-discord-proxy:latest
-        ports:
-        - containerPort: 5001
-        env:
-        - name: DISCORD_WEBHOOK_URL
-          valueFrom:
-            secretKeyRef:
-              name: discord-secret
-              key: webhook-url
+### Monitoramento de Containers
+
+1. **Portainer Monitor** (thread separada):
+   - Polling a cada 30s em todos os endpoints configurados
+   - Detecta transições DOWN→UP e UP→DOWN
+   - Aplica supressão para evitar spam
+   - Verifica blue/green siblings antes de alertar
+
+2. **Supressão de Alertas**:
+   - **Estados problemáticos**: `down`, `restarting`, `exited`, `dead`, `unknown`
+   - **Primeira falha**: Envia alerta e ativa supressão
+   - **Falhas subsequentes**: Suprimido até voltar a `running`
+   - **Recuperação**: Reset da supressão quando volta a `running`
+   - **Persistência**: Estado salvo em `/app/data/suppression-state.json`
+
+3. **Blue/Green Deployment**:
+   - Detecta padrão `app-blue`, `app-green`
+   - Se `app-blue` cai mas `app-green` está UP → Suprime alerta
+   - Se ambos caem → Alerta normalmente
+
+### Alertas do Grafana
+
+- **CPU/Memória/Disco**: Recebe via webhook, formata e envia ao Discord
+- **Container**: Ignorado (Portainer é a fonte única)
+
+## 📊 Exemplo de Alerta
+
+```
+🚨 CONTAINER OFFLINE
+
+📊 Detalhes Técnicos
+Alert: ContainerDown - nginx-prod
+Severidade: CONTAINER OFFLINE
+
+🔁 Portainer
+🔴 Estado: exited
+📛 Nome: nginx-prod
+
+📍 Localização
+🖥️ Servidor: 192.168.1.10
+⏰ Timestamp: 2025-11-28 14:32:10
 ```
 
-### Monitoramento e Logs
+## 📚 Documentação Completa
+
+- [Variáveis de Ambiente](docs/ENV_VARS.md) - Todas as configurações
+- [Integração Portainer](docs/PORTAINER_INTEGRATION.md) - Setup detalhado
+- [Separação de Responsabilidades](docs/PORTAINER_MONITOR_SEPARATION.md) - Arquitetura
+- [Supressão de Alertas](docs/CONTAINER_SUPPRESSION.md) - Regras e lógica
+- [Persistência de Estado](docs/SUPPRESSION_PERSISTENCE.md) - Como funciona
+
+## 🐛 Troubleshooting
+
+### Alertas duplicados no rebuild
+
+**Problema**: Ao rebuildar container, recebe todos os alertas novamente.
+
+**Solução**: ✅ Implementada persistência de estado em volume Docker (`./data`). O estado de supressão é mantido entre restarts.
+
+### Containers mostrando apenas ID
+
+**Problema**: Alguns alertas mostram `container-abc123` ao invés do nome.
+
+**Solução**: ✅ Implementado fallback em múltiplas etapas:
+1. `Names[0]`
+2. `Name`
+3. `Labels['com.docker.compose.service']`
+4. `container-{ID[:12]}`
+
+### Alertas de container quando faz deploy blue/green
+
+**Problema**: Recebe alerta de DOWN quando troca `app-blue` por `app-green`.
+
+**Solução**: ✅ Blue/green suppression habilitado por padrão. Se sibling estiver UP, alerta é suprimido.
+
+### Debug
 
 ```bash
-# Logs em tempo real
-docker-compose logs -f grafana-discord-proxy
-
-# Métricas do container
-docker stats grafana-discord-proxy-prod
-
-# Health check
-curl -s http://localhost:5001/health | jq
-```
-
-## 🛠️ Desenvolvimento
-
-### Setup Local
-
-```bash
-# Clonar repositório
-git clone https://github.com/duduomena1/proxy-alertmanager.git
-cd proxy-alertmanager
-
-# Ambiente virtual Python
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# ou
-venv\Scripts\activate     # Windows
-
-# Instalar dependências
-pip install -r requirements.txt
-
-# Executar em modo desenvolvimento
-export DEBUG_MODE=true
-export DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
-python discord_proxy.py
-```
-
-### Estrutura de Arquivos
-
-```text
-proxy-alertmanager/
-├── discord_proxy.py           # 🐍 Aplicação Flask principal
-├── requirements.txt           # 📦 Dependências Python
-├── Dockerfile                 # 🐳 Configuração do container
-├── docker-compose.yml         # 🚀 Orquestração dos serviços
-├── .env.example              # ⚙️ Exemplo de configurações
-├── rebuild.sh                # 🔧 Script de rebuild automático
-├── templates/                # 📄 Templates do Grafana
-│   ├── container-template-minimal.yml
-│   ├── CPU-template .yml
-│   ├── memory-template-minimal.yml
-│   ├── disk-template-minimal.yml
-│   └── prometheus.yaml
-├── test/                     # 🧪 Scripts de teste
-│   ├── test_container_down_vs_up.sh
-│   ├── test_container_detailed.sh
-│   ├── test_alerts.sh
-│   └── *.json
-└── GRAFANA_METRICS_GUIDE.md  # 📚 Guia de configuração
-```
-
-## 🔍 Troubleshooting
-
-### Problemas Comuns
-
-#### 1. Alertas não chegam no Discord
-
-```bash
-# Verificar conectividade
-curl -X POST $DISCORD_WEBHOOK_URL \
-  -H "Content-Type: application/json" \
-  -d '{"content":"Teste de conectividade"}'
-
-# Verificar logs do proxy
-docker-compose logs -f grafana-discord-proxy
-
-# Testar endpoint manualmente
-curl -X POST http://localhost:5001/alert \
-  -H "Content-Type: application/json" \
-  --data @test/test_alert_endpoint.json
-```
-
-#### 2. Containers não são detectados corretamente
-
-```bash
-# Habilitar debug
-export DEBUG_MODE=true
-docker-compose restart grafana-discord-proxy
-
-# Testar com payload específico
-./test/test_container_down_vs_up.sh
-
-# Verificar logs de parsing
-docker-compose logs grafana-discord-proxy | grep "DEBUG.*Container"
-```
-
-#### 3. Templates com erros no Grafana
-
-Use os templates fornecidos em `/templates/` que são livres dos erros:
-
-- ❌ `float64` não definido
-- ❌ `regexReplaceAll` não definido  
-- ❌ `atof` não disponível
-
-✅ **Solução**: Templates minimalistas com processamento no proxy
-
-### Debug Avançado
-
-```bash
-# Modo debug completo
-echo "DEBUG_MODE=true" >> .env
+# Habilitar logs detalhados
+docker-compose down
+# Edite .env: DEBUG_MODE=true
 docker-compose up -d
-
-# Monitorar requests em tempo real
-docker-compose logs -f grafana-discord-proxy | grep -E "POST|DEBUG"
-
-# Testar parsing manual
-curl -X POST http://localhost:5001/alert_minimal \
-  -H "Content-Type: text/plain" \
-  --data "CONTAINER_ALERT_START
-alertname: ContainerDown
-status: firing
-container_name: test-container
-value_A: 0
-CONTAINER_ALERT_END"
+docker logs grafana-discord-proxy-prod -f
 ```
 
-## 🤝 Contribuições
+## 📝 Changelog
 
-Contribuições são muito bem-vindas! Este projeto está em desenvolvimento ativo e há várias áreas onde você pode ajudar:
-
-### 🎯 Como Contribuir
-
-1. **Fork** este repositório
-2. **Crie** uma branch para sua feature (`git checkout -b feature/nova-funcionalidade`)
-3. **Commit** suas mudanças (`git commit -am 'Adiciona nova funcionalidade'`)
-4. **Push** para a branch (`git push origin feature/nova-funcionalidade`)
-5. **Abra** um Pull Request
-
-### 🛠️ Áreas que Precisam de Ajuda
-
-- **🧪 Testes**: Mais cenários de teste para diferentes tipos de alerta
-- **📊 Métricas**: Suporte a novos tipos de métricas e dashboards
-- **🎨 Templates**: Templates adicionais para diferentes configurações
-- **🔧 Integração**: Suporte a outras plataformas (Slack, Teams, etc.)
-- **📚 Documentação**: Melhorias na documentação e exemplos
-- **🚀 Performance**: Otimizações e melhorias de desempenho
-- **🛡️ Segurança**: Validações adicionais e hardening
-
-### 📋 Guidelines para PRs
-
-- ✅ **Testes**: Inclua testes para novas funcionalidades
-- ✅ **Documentação**: Atualize o README se necessário
-- ✅ **Código**: Siga o padrão de código existente
-- ✅ **Commits**: Use mensagens descritivas
-- ✅ **Compatibilidade**: Mantenha compatibilidade com versões existentes
-
-### 🐛 Reportando Bugs
-
-Ao reportar bugs, inclua:
-
-- **Versão** do proxy
-- **Configuração** do Grafana
-- **Logs** do container
-- **Payload** que causou o problema
-- **Comportamento esperado** vs **comportamento atual**
-
-### 💡 Sugerindo Features
-
-Para sugerir novas funcionalidades:
-
-- **Descreva** o problema que a feature resolveria
-- **Explique** como você imagina que funcionaria
-- **Forneça** exemplos de uso
-- **Considere** a compatibilidade com o código existente
-
----
+**v2.0.0** - 28/11/2025
+- ✅ Separação: Portainer monitora containers, Grafana monitora métricas
+- ✅ Persistência de estado de supressão em volume
+- ✅ Deduplicação de containers por ID
+- ✅ Melhorias na extração de nomes
+- ✅ Suporte blue/green deployment
+- ✅ Fix: Alertas duplicados no rebuild
 
 ## 📄 Licença
 
-Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
-
----
-
-Desenvolvido com ❤️ para melhorar a experiência de monitoramento e observabilidade.
-
-🌟 Se este projeto te ajudou, considere dar uma estrela no GitHub!
+MIT
