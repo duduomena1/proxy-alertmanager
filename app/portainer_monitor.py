@@ -12,6 +12,7 @@ from .constants import (
     PORTAINER_MONITOR_ENDPOINTS,
     PORTAINER_MONITOR_DOWN_CONFIRMATIONS,
     PORTAINER_MONITOR_SCOPE,
+    PORTAINER_MONITOR_ONLY_SOURCE,
 )
 from .portainer import portainer_client
 from .dedupe import TTLCache, build_alert_fingerprint
@@ -250,6 +251,7 @@ class PortainerMonitor(threading.Thread):
         }
 
         # Supressão por estado (bloqueia reenvio até voltar a running)
+        # Respeita o whitelist (CONTAINER_ALWAYS_NOTIFY_ALLOWLIST)
         try:
             mapped_ip = enriched_info.get('real_ip')
             cid = container_entry.get('Id')
@@ -266,6 +268,8 @@ class PortainerMonitor(threading.Thread):
             if DEBUG_MODE:
                 print(f"[DEBUG] PortainerMonitor: suppression check key={key} state={current_state} send={should_send} reason={reason}")
             if not should_send:
+                if DEBUG_MODE:
+                    print(f"[DEBUG] PortainerMonitor: alerta suprimido (reason={reason})")
                 return
         except Exception as exc:
             if DEBUG_MODE:

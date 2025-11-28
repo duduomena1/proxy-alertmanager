@@ -26,6 +26,8 @@ PORTAINER_MONITOR_INTERVAL_SECONDS = int(os.getenv("PORTAINER_MONITOR_INTERVAL_S
 PORTAINER_MONITOR_ENDPOINTS = os.getenv("PORTAINER_MONITOR_ENDPOINTS", "").strip()
 PORTAINER_MONITOR_DOWN_CONFIRMATIONS = int(os.getenv("PORTAINER_MONITOR_DOWN_CONFIRMATIONS", "1"))
 PORTAINER_MONITOR_SCOPE = os.getenv("PORTAINER_MONITOR_SCOPE", "map").strip().lower()  # 'map' | 'all'
+# Se true, PortainerMonitor é a ÚNICA fonte de alertas de container (ignora alertas de container do Grafana)
+PORTAINER_MONITOR_ONLY_SOURCE = os.getenv("PORTAINER_MONITOR_ONLY_SOURCE", "false").lower() == "true"
 
 # Supressão específica para containers
 CONTAINER_SUPPRESS_REPEATS = os.getenv("CONTAINER_SUPPRESS_REPEATS", "true").lower() == "true"

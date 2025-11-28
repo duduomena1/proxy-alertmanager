@@ -5,6 +5,7 @@ import json
 from .constants import ALERT_CONFIGS, APP_PORT, DEBUG_MODE, SEVERITY_LEVELS, ALERT_DEDUP_ENABLED, ALERT_COOLDOWN_SECONDS, ALERT_CACHE_MAX
 from .constants import CONTAINER_ALWAYS_NOTIFY_ALLOWLIST
 from .constants import CONTAINER_SUPPRESS_REPEATS
+from .constants import PORTAINER_MONITOR_ONLY_SOURCE
 from .dedupe import TTLCache, build_alert_fingerprint
 from .utils import format_timestamp, extract_metric_value_enhanced, format_metric_value, _is_meaningful
 from .enrichment import extract_real_ip_and_source, build_server_location
@@ -173,6 +174,14 @@ def create_app():
             portainer_result = None
 
             if alert_type == 'container':
+                # Se PORTAINER_MONITOR_ONLY_SOURCE=true, ignora alertas de container do Grafana
+                # (PortainerMonitor é a única fonte de alertas de container)
+                if PORTAINER_MONITOR_ONLY_SOURCE:
+                    if DEBUG_MODE:
+                        container_name = labels.get('container') or labels.get('container_name') or 'unknown'
+                        print(f"[DEBUG] Alerta de container '{container_name}' do Grafana IGNORADO (PORTAINER_MONITOR_ONLY_SOURCE=true)")
+                    continue
+                
                 if portainer_client.enabled:
                     host_for_portainer = real_ip if real_ip and real_ip != 'unknown' else clean_host
                     if not host_for_portainer or host_for_portainer == 'unknown':
