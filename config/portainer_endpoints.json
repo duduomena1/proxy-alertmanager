@@ -1,51 +1,169 @@
 {
-  "local": { "id": 3 },
-
-  "app01-focorj": { "id": 4 , "ssh_user": "app01"},
-  "172.16.104.11": { "id": 4 , "ssh_user": "app01"},
-
-  "app02-focorj": { "id": 5 , "ssh_user": "app02"},
-  "172.16.104.21": { "id": 5 , "ssh_user": "app02"},
-
-  "msg01-focorj": { "id": 6 , "ssh_user": "msg01"   },
-  "172.16.104.14": { "id": 6 , "ssh_user": "msg01"   },
-
-  "img01-focorj": { "id": 7 , "ssh_user": "img01"  },
-  "172.16.104.13": { "id": 7 , "ssh_user": "img01"  },
-
-  "db01-focorj": { "id": 8 , "ssh_user": "db01"  },
-  "172.16.104.12": { "id": 8 , "ssh_user": "db01"  },
-
-  "db02-focorj": { "id": 9 , "ssh_user": "db02"  },
-  "172.16.104.22": { "id": 9 , "ssh_user": "db02"  },
-
-  "db03-focorj": { "id": 10 , "ssh_user": "db03"  },
-  "172.16.104.32": { "id": 10 , "ssh_user": "db03"  },
-
-  "msg02-focorj": { "id": 11 , "ssh_user": "msg02"  },
-  "172.16.104.24": { "id": 11 , "ssh_user": "msg02"  },
-
-  "msg03-focorj": { "id": 12 , "ssh_user": "msg03"  },
-  "172.16.104.34": { "id": 12 , "ssh_user": "msg03"  },
-
-  "tatico02": { "id": 13 , "ssh_user": "tatico" },
-  "192.168.255.248": { "id": 13 , "ssh_user": "tatico" },
-
-  "AMC-NFS-PROD": { "id": 14, "ssh_user": "dev" },
-  "192.168.255.212": { "id": 14, "ssh_user": "dev" },
-
-  "AMC-APP-PROD": { "id": 15, "ssh_user": "dev" },
-  "192.168.255.207": { "id": 15, "ssh_user": "dev" },
-
-  "AMC-SUPERSET-PROD": { "id": 16, "ssh_user": "dev" },
-  "192.168.255.213": { "id": 16, "ssh_user": "dev" },
-
-  "FOCO|RJ": { "id": 18, "ssh_user": "root"},
-  "104.131.71.80": { "id": 18, "ssh_user": "root"},
-
-  "TATICO-PB-NOVO": { "id": 19, "ssh_user": "ipq"},
-  "192.168.191.194": { "id": 19, "ssh_user": "ipq"},
-
-  "Candeias-inteligencia": { "id": 20, "ssh_user": "root"},
-  "159.65.46.83": { "id": 20, "ssh_user": "root"}
+  "local": {
+    "id": 3
+  },
+  "app01-focorj": {
+    "id": 4,
+    "ssh_user": "app01"
+  },
+  "172.16.104.11": {
+    "id": 4,
+    "ssh_user": "app01"
+  },
+  "app02-focorj": {
+    "id": 5,
+    "ssh_user": "app02"
+  },
+  "172.16.104.21": {
+    "id": 5,
+    "ssh_user": "app02"
+  },
+  "msg01-focorj": {
+    "id": 6,
+    "ssh_user": "msg01"
+  },
+  "172.16.104.14": {
+    "id": 6,
+    "ssh_user": "msg01"
+  },
+  "img01-focorj": {
+    "id": 7,
+    "ssh_user": "img01"
+  },
+  "172.16.104.13": {
+    "id": 7,
+    "ssh_user": "img01"
+  },
+  "db01-focorj": {
+    "id": 8,
+    "ssh_user": "db01"
+  },
+  "172.16.104.12": {
+    "id": 8,
+    "ssh_user": "db01"
+  },
+  "db02-focorj": {
+    "id": 9,
+    "ssh_user": "db02"
+  },
+  "172.16.104.22": {
+    "id": 9,
+    "ssh_user": "db02"
+  },
+  "db03-focorj": {
+    "id": 10,
+    "ssh_user": "db03"
+  },
+  "172.16.104.32": {
+    "id": 10,
+    "ssh_user": "db03"
+  },
+  "msg02-focorj": {
+    "id": 11,
+    "ssh_user": "msg02"
+  },
+  "172.16.104.24": {
+    "id": 11,
+    "ssh_user": "msg02"
+  },
+  "msg03-focorj": {
+    "id": 12,
+    "ssh_user": "msg03"
+  },
+  "172.16.104.34": {
+    "id": 12,
+    "ssh_user": "msg03"
+  },
+  "tatico02": {
+    "id": 13,
+    "ssh_user": "tatico"
+  },
+  "192.168.255.248": {
+    "id": 13,
+    "ssh_user": "tatico"
+  },
+  "AMC-NFS-PROD": {
+    "id": 14,
+    "ssh_user": "dev"
+  },
+  "192.168.255.212": {
+    "id": 14,
+    "ssh_user": "dev"
+  },
+  "AMC-APP-PROD": {
+    "id": 15,
+    "ssh_user": "dev"
+  },
+  "192.168.255.207": {
+    "id": 15,
+    "ssh_user": "dev"
+  },
+  "AMC-SUPERSET-PROD": {
+    "id": 16,
+    "ssh_user": "dev"
+  },
+  "192.168.255.213": {
+    "id": 16,
+    "ssh_user": "dev"
+  },
+  "FOCO|RJ": {
+    "id": 18,
+    "ssh_user": "root"
+  },
+  "104.131.71.80": {
+    "id": 18,
+    "ssh_user": "root"
+  },
+  "TATICO-PB-NOVO": {
+    "id": 19,
+    "ssh_user": "ipq"
+  },
+  "192.168.191.194": {
+    "id": 19,
+    "ssh_user": "ipq"
+  },
+  "Candeias-inteligencia": {
+    "id": 20,
+    "ssh_user": "root"
+  },
+  "159.65.46.83": {
+    "id": 20,
+    "ssh_user": "root"
+  },
+  "Moto-Tracker": {
+    "id": 21,
+    "ssh_user": "root"
+  },
+  "64.23.216.43": {
+    "id": 21,
+    "ssh_user": "root"
+  },
+  "Moto-segura": {
+    "id": 22,
+    "ssh_user": "personal_user"
+  },
+  "137.184.125.180": {
+    "id": 22,
+    "ssh_user": "personal_user"
+  },
+  "IMG03": {
+    "id": 23,
+    "ssh_user": "img03"
+  },
+  "172.16.104.33": {
+    "id": 23,
+    "ssh_user": "img03"
+  },
+  "APP03": {
+    "id": 24,
+    "ssh_user": "app03"
+  },
+  "172.16.104.31": {
+    "id": 24,
+    "ssh_user": "app03"
+  },
+  "img03 - focorj": {
+    "id": 25,
+    "ssh_user": "img03"
+  }
 }
