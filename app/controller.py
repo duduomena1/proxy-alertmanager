@@ -170,6 +170,17 @@ def create_app():
             location_info = build_server_location(enriched_info, labels)
             server_display = location_info.get('display')
             prometheus_display = location_info.get('prometheus')
+
+            # Fallback: se não encontrou IP/host, usa alertname ou rulename como identificador
+            if not server_display:
+                rulename = labels.get('rulename', '').strip()
+                if rulename:
+                    server_display = rulename
+                elif alertname and alertname not in ['Alerta', 'DatasourceError']:
+                    server_display = alertname
+                else:
+                    server_display = 'Não identificado'
+
             value_text = format_metric_value(metric_value, config['unit'])
 
             portainer_result = None
