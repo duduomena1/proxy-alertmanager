@@ -88,7 +88,8 @@ def create_app():
     def enrich_alert_data(alert_data):
         for alert in alert_data.get('alerts', []):
             labels = alert.get('labels', {})
-            ip_info = extract_real_ip_and_source(labels)
+            annotations = alert.get('annotations', {})
+            ip_info = extract_real_ip_and_source(labels, annotations)
             alert['enriched_data'] = {
                 'real_ip': ip_info['real_ip'],
                 'prometheus_source': ip_info['prometheus_source'],

@@ -2,7 +2,9 @@ import re
 from .utils import pick_first_nonempty, _strip_port
 
 
-def extract_real_ip_and_source(labels):
+def extract_real_ip_and_source(labels, annotations=None):
+    if annotations is None:
+        annotations = {}
     real_ip = None
     prometheus_source = "unknown"
     original_instance = labels.get('instance', 'N/A')
@@ -69,6 +71,19 @@ def extract_real_ip_and_source(labels):
                     if ip_match:
                         real_ip = ip_match.group(1)
                         break
+
+    # Fallback extrator de IP em Annotations (útil para DatasourceError do Grafana)
+    if not real_ip and annotations:
+        for key, value in annotations.items():
+            if value and isinstance(value, str):
+                ips_found = re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', value)
+                if ips_found:
+                    for ip in ips_found:
+                        if not ip.startswith('127.') and ip != '0.0.0.0':
+                            real_ip = ip
+                            break
+            if real_ip:
+                break
 
     result = {
         'real_ip': real_ip,
