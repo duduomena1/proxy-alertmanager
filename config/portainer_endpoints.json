@@ -1,3 +1,4 @@
+
 {
   "local": { "id": 3 },
 
@@ -47,5 +48,19 @@
   "192.168.191.194": { "id": 19, "ssh_user": "ipq"},
 
   "Candeias-inteligencia": { "id": 20, "ssh_user": "root"},
-  "159.65.46.83": { "id": 20, "ssh_user": "root"}
+  "159.65.46.83": { "id": 20, "ssh_user": "root"},
+
+  "Moto-Tracker": { "id": 21, "ssh_user": "root"},
+  "64.23.216.43": { "id": 21, "ssh_user": "root"},
+
+  "Moto-segura": { "id": 22, "ssh_user": "root"},
+  "137.184.125.180": { "id": 22, "ssh_user": "root"},
+
+  "img03-focorj": { "id": 25, "ssh_user": "img03"},
+  "172.16.104.33": { "id": 25, "ssh_user": "img03"},
+
+  "app03": { "id": 26, "ssh_user": "app03"},
+  "172.16.104.31": { "id": 26, "ssh_user": "app03"}
+
+
 }

@@ -380,6 +380,32 @@ def create_app():
             if severity_config['gif']:
                 embed["image"] = {"url": severity_config['gif']}
 
+            # ==== COLETA DE INFORMAÇÕES EXTRAS (LABELS & ANNOTATIONS) ====
+            ignored_labels = {'alertname', 'severity', 'instance', 'job', 'host_ip', 'real_host', 'container', 'container_name', 'pod', 'pod_name', 'name', 'namespace', 'node', 'image', 'device', 'mountpoint', 'fstype', 'prometheus_server', 'service_type', 'environment'}
+            extra_labels = {k: v for k, v in labels.items() if k not in ignored_labels and v and str(v).lower() not in ['n/a', 'unknown', 'none', 'null', '']}
+            
+            ignored_annotations = {'description', 'summary', 'message'}
+            extra_annotations = {k: v for k, v in annotations.items() if k not in ignored_annotations and v and str(v).lower() not in ['n/a', 'unknown', 'none', 'null', '']}
+            
+            if extra_labels:
+                labels_str = "\n".join([f"**{k}:** `{v}`" for k, v in extra_labels.items()])
+                if len(labels_str) > 1024:
+                    labels_str = labels_str[:1020] + "..."
+                embed["fields"].append({
+                    "name": "🏷️ Outras Labels",
+                    "value": labels_str,
+                    "inline": False,
+                })
+
+            if extra_annotations:
+                ann_str = "\n".join([f"**{k}:** {v}" if not str(v).startswith('http') else f"**{k}:** [Acessar Link]({v})" for k, v in extra_annotations.items()])
+                if len(ann_str) > 1024:
+                    ann_str = ann_str[:1020] + "..."
+                embed["fields"].append({
+                    "name": "📝 Outras Anotações",
+                    "value": ann_str,
+                    "inline": False,
+                })
             # Flag para evitar dedupe quando no allowlist de "sempre notificar"
             always_notify = False
             if alert_type == 'container':
