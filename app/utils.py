@@ -46,7 +46,7 @@ def format_metric_value(value, unit):
         return "indisponível"
 
 
-def extract_metric_value_enhanced(values, value_string, alert_type="default", debug_mode=False):
+def extract_metric_value_enhanced(values, value_string, alert_type="default", debug_mode=False, description=""):
     if debug_mode:
         print(f"[DEBUG] extract_metric_value_enhanced - Alert Type: {alert_type}")
         print(f"[DEBUG] Values received: {values}")
@@ -102,13 +102,25 @@ def extract_metric_value_enhanced(values, value_string, alert_type="default", de
             if debug_mode:
                 print(f"[DEBUG] Failed to extract from valueString: {e}")
 
-    if extracted_value is None:
-        extracted_value = 0.0
-        extraction_source = "default_fallback"
-        if debug_mode:
-            print(f"[DEBUG] No value found, using default: {extracted_value}")
+    # Fallback: tenta extrair percentual da description/summary (Prometheus Alertmanager
+    # renderiza {{ $value }} nas anotações antes de enviar, então o valor real fica no texto)
+    if extracted_value is None and description and alert_type in ['cpu', 'memory', 'disk']:
+        pct_match = re.search(r'(\d+(?:\.\d+)?)\s*%', str(description))
+        if pct_match:
+            try:
+                extracted_value = float(pct_match.group(1))
+                extraction_source = "description(percentage)"
+                if debug_mode:
+                    print(f"[DEBUG] Extracted {extracted_value} from {extraction_source}")
+            except ValueError:
+                pass
 
-    if alert_type in ['cpu', 'memory', 'disk']:
+    if extracted_value is None:
+        extraction_source = "default_fallback(None)"
+        if debug_mode:
+            print(f"[DEBUG] No value found, keeping None (will display as indisponível)")
+
+    if extracted_value is not None and alert_type in ['cpu', 'memory', 'disk']:
         if extracted_value > 1 and extracted_value <= 100:
             pass
         elif extracted_value > 0 and extracted_value <= 1:

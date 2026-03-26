@@ -55,7 +55,7 @@ def validate_container_alert_data(alert_data, enriched_info, labels, get_metric_
 
     values = alert_data.get('values', {})
     metric_value = get_metric_value(values, alert_data.get('valueString', ''), 'container', True)
-    if metric_value not in [0, 1] and metric_value not in [0.0, 1.0]:
+    if metric_value is not None and metric_value not in [0, 1] and metric_value not in [0.0, 1.0]:
         validation_errors.append(f"Valor de métrica inválido para container: {metric_value}")
 
     if not is_container_alert(labels):
@@ -106,7 +106,7 @@ Values: {json.dumps(values, indent=2)}
         container_status = "🟢 **ONLINE/RODANDO**"
         status_icon = "✅"
     else:
-        container_status = f"⚠️ **STATUS DESCONHECIDO** (valor: {validated_metric_value})"
+        container_status = "⚠️ **STATUS DESCONHECIDO**"
         status_icon = "⚠️"
 
     # Preferir IP do endpoint do Portainer, se disponível no mapa

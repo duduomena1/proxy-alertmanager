@@ -101,8 +101,8 @@ def create_app():
                 alert['enriched_data']['container_context'] = extract_container_info(labels)
         return alert_data
 
-    def get_metric_value(values, value_string=None, alert_type="default", debug_mode=False):
-        return extract_metric_value_enhanced(values, value_string, alert_type, debug_mode)
+    def get_metric_value(values, value_string=None, alert_type="default", debug_mode=False, description=""):
+        return extract_metric_value_enhanced(values, value_string, alert_type, debug_mode, description=description)
 
     def build_portainer_embed_value(result):
         if not result or not result.get('enabled'):
@@ -154,9 +154,10 @@ def create_app():
             mountpoint = labels.get('mountpoint', '/')
 
             debug_enabled = os.getenv("DEBUG_MODE", "False").lower() == "true"
-            metric_value = get_metric_value(values, value_string, alert_type, debug_enabled)
 
             description = annotations.get('description', '').replace('"', '').strip() or annotations.get('summary', 'Sem descrição disponível')
+            metric_value = get_metric_value(values, value_string, alert_type, debug_enabled, description=description)
+
             alert_status = alert_data.get('status', 'unknown')
             is_firing = alert_status == 'firing'
 
@@ -339,7 +340,7 @@ def create_app():
                 elif metric_value == 0:
                     container_status = "🔴 OFFLINE"
                 else:
-                    container_status = f"⚠️ DESCONHECIDO ({metric_value})"
+                    container_status = "⚠️ DESCONHECIDO"
 
                 embed["fields"].append({
                     "name": "🐳 Container Info",
