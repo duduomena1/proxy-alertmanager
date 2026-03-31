@@ -72,6 +72,16 @@ def extract_real_ip_and_source(labels, annotations=None):
                         real_ip = ip_match.group(1)
                         break
 
+    # Fallback extrator de IP no alertname (ex: "Memory - App002 - 172.16.104.21")
+    if not real_ip:
+        alertname = labels.get('alertname', '')
+        if alertname:
+            ips_in_name = re.findall(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b', alertname)
+            for ip in ips_in_name:
+                if not ip.startswith('127.') and ip != '0.0.0.0':
+                    real_ip = ip
+                    break
+
     # Fallback extrator de IP em Annotations (útil para DatasourceError do Grafana)
     if not real_ip and annotations:
         for key, value in annotations.items():
