@@ -209,6 +209,7 @@ docker logs grafana-discord-proxy-prod -f
 - ✅ Suporte blue/green deployment
 - ✅ Fix: Alertas duplicados no rebuild
 
-## 📄 Licença
-
-MIT
+## To do 📝
+ - [ ] Adicionar GIF no alerta do portainer
+ - [ ] Adicionar proxy para alertas kafka
+ - [ ] Limpar alertas
