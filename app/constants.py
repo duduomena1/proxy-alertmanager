@@ -48,13 +48,13 @@ CONTAINER_ALWAYS_NOTIFY_ALLOWLIST = set([s.strip() for s in _always_notify_allow
 _ignore_allowlist_env = os.getenv("CONTAINER_IGNORE_ALLOWLIST", "").strip()
 CONTAINER_IGNORE_ALLOWLIST = set([s.strip() for s in _ignore_allowlist_env.split(",") if s.strip()])
 
-# Configurações de tipos de alertas com níveis de severidade
+# Configurações de tipos de alertas — inclui GIF único por tipo (independente de severidade)
 ALERT_CONFIGS = {
-    "cpu": {"emoji": "🖥️", "name": "CPU", "unit": "%"},
-    "memory": {"emoji": "💾", "name": "MEMÓRIA", "unit": "%"},
-    "disk": {"emoji": "💿", "name": "DISCO", "unit": "%"},
-    "container": {"emoji": "🐳", "name": "CONTAINER", "unit": ""},
-    "default": {"emoji": "🚨", "name": "SISTEMA", "unit": ""},
+    "cpu":       {"emoji": "🖥️",  "name": "CPU",      "unit": "%", "gif": os.getenv("CPU_GIF", "")},
+    "memory":    {"emoji": "💾",  "name": "MEMÓRIA",  "unit": "%", "gif": os.getenv("MEMORY_GIF", "")},
+    "disk":      {"emoji": "💿",  "name": "DISCO",    "unit": "%", "gif": os.getenv("DISK_GIF", "")},
+    "container": {"emoji": "🐳",  "name": "CONTAINER", "unit": "", "gif": ""},
+    "default":   {"emoji": "🚨",  "name": "SISTEMA",  "unit": "", "gif": os.getenv("DEFAULT_GIF", "")},
 }
 
 SEVERITY_LEVELS = {
@@ -63,54 +63,21 @@ SEVERITY_LEVELS = {
         "threshold_max": 80,
         "emoji": "🚧",
         "label": "ATENÇÃO",
-        "colors": {
-            "cpu": int(os.getenv("CPU_LOW_COLOR", "16776960")),
-            "memory": int(os.getenv("MEMORY_LOW_COLOR", "16776960")),
-            "disk": int(os.getenv("DISK_LOW_COLOR", "16776960")),
-            "default": int(os.getenv("DEFAULT_LOW_COLOR", "16776960")),
-        },
-        "gifs": {
-            "cpu": os.getenv("CPU_LOW_GIF", ""),
-            "memory": os.getenv("MEMORY_LOW_GIF", ""),
-            "disk": os.getenv("DISK_LOW_GIF", ""),
-            "default": os.getenv("DEFAULT_LOW_GIF", ""),
-        },
+        "color": int(os.getenv("LOW_COLOR", "16776960")),   # Amarelo
     },
     "medium": {
         "threshold_min": 80,
         "threshold_max": 90,
         "emoji": "⚠️",
         "label": "ALERTA",
-        "colors": {
-            "cpu": int(os.getenv("CPU_MEDIUM_COLOR", "16753920")),
-            "memory": int(os.getenv("MEMORY_MEDIUM_COLOR", "16753920")),
-            "disk": int(os.getenv("DISK_MEDIUM_COLOR", "16753920")),
-            "default": int(os.getenv("DEFAULT_MEDIUM_COLOR", "16753920")),
-        },
-        "gifs": {
-            "cpu": os.getenv("CPU_MEDIUM_GIF", ""),
-            "memory": os.getenv("MEMORY_MEDIUM_GIF", ""),
-            "disk": os.getenv("DISK_MEDIUM_GIF", ""),
-            "default": os.getenv("DEFAULT_MEDIUM_GIF", ""),
-        },
+        "color": int(os.getenv("MEDIUM_COLOR", "16753920")),  # Laranja
     },
     "high": {
         "threshold_min": 90,
         "threshold_max": 100,
         "emoji": "🔥",
         "label": "CRÍTICO",
-        "colors": {
-            "cpu": int(os.getenv("CPU_HIGH_COLOR", "16711680")),
-            "memory": int(os.getenv("MEMORY_HIGH_COLOR", "16711680")),
-            "disk": int(os.getenv("DISK_HIGH_COLOR", "16711680")),
-            "default": int(os.getenv("DEFAULT_HIGH_COLOR", "16711680")),
-        },
-        "gifs": {
-            "cpu": os.getenv("CPU_HIGH_GIF", ""),
-            "memory": os.getenv("MEMORY_HIGH_GIF", ""),
-            "disk": os.getenv("DISK_HIGH_GIF", ""),
-            "default": os.getenv("DEFAULT_HIGH_GIF", ""),
-        },
+        "color": int(os.getenv("HIGH_COLOR", "16711680")),   # Vermelho
     },
     "container_down": {
         "emoji": "🚨",

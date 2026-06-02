@@ -39,6 +39,8 @@ class PortainerMonitor(threading.Thread):
         self._running_counts: Dict[Tuple[int, str], int] = {}
         self._down_counts: Dict[Tuple[int, str], int] = {}
         self.down_confirmations = max(1, PORTAINER_MONITOR_DOWN_CONFIRMATIONS)
+        # Mapeamento (endpoint_id, container_id) -> nome, para uso em alertas phantom
+        self._id_to_name: Dict[Tuple[int, str], str] = {}
         # Supressor de repetição por container
         self.suppressor = ContainerSuppressor()
 
@@ -110,7 +112,9 @@ class PortainerMonitor(threading.Thread):
 
             # Monta snapshot atual
             current: Dict[Tuple[int, str], bool] = {}
-            
+            # Mapeamento nome.lower() -> cid para detecção de recriação neste ciclo
+            current_name_to_cid: Dict[str, str] = {}
+
             # Deduplica containers por ID (Portainer às vezes retorna duplicados)
             seen_containers = {}
             for entry in all_containers or []:
@@ -147,6 +151,13 @@ class PortainerMonitor(threading.Thread):
                 # running se: state indica running OU status começa com 'up', mas não estiver paused
                 running = ((s_state == 'running') or s_status.startswith('up')) and not (is_paused or is_exited)
                 current[(eid, cid)] = running
+
+                # Mantém mapeamento ID -> nome para alertas de containers desaparecidos
+                _entry_names = entry.get('Names') or []
+                if _entry_names:
+                    _cname = _entry_names[0].lstrip('/')
+                    self._id_to_name[(eid, cid)] = _cname
+                    current_name_to_cid[_cname.lower()] = cid
 
                 # Atualiza contadores de histerese
                 key = (eid, cid)
@@ -192,11 +203,21 @@ class PortainerMonitor(threading.Thread):
                 if peid != eid:
                     continue
                 if (peid, pcid) not in current and was_running is True:
+                    # Verifica se o container foi recriado (mesmo nome, novo ID)
+                    old_name = self._id_to_name.get((peid, pcid), '')
+                    if old_name and old_name.lower() in current_name_to_cid:
+                        new_cid = current_name_to_cid[old_name.lower()]
+                        if new_cid != pcid:
+                            if DEBUG_MODE:
+                                print(f"[DEBUG] PortainerMonitor: container '{old_name}' recriado (old={pcid[:12]}, new={new_cid[:12]}), ignorando alerta de DOWN")
+                            continue
                     # Container não aparece: confirmar com histerese antes de alertar
                     key = (peid, pcid)
                     self._down_counts[key] = self._down_counts.get(key, 0) + 1
                     if self._down_counts[key] >= self.down_confirmations:
-                        phantom = {'Id': pcid, 'Names': [], 'State': 'exited'}
+                        stored_name = self._id_to_name.get((peid, pcid))
+                        phantom_names = [f'/{stored_name}'] if stored_name else []
+                        phantom = {'Id': pcid, 'Names': phantom_names, 'State': 'exited'}
                         self._emit_down_alert(eid, phantom)
                     else:
                         if DEBUG_MODE:

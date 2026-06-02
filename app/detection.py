@@ -1,4 +1,4 @@
-from .constants import SEVERITY_LEVELS
+from .constants import SEVERITY_LEVELS, ALERT_CONFIGS
 
 
 def is_container_alert(labels):
@@ -89,8 +89,12 @@ def get_severity_level(metric_value, alert_type="default"):
 def get_severity_config(severity_level, alert_type="default"):
     level_config = SEVERITY_LEVELS.get(severity_level)
     if level_config:
-        color = level_config.get("colors", {}).get(alert_type) if "colors" in level_config else level_config.get("color")
-        gif = level_config.get("gifs", {}).get(alert_type) if "gifs" in level_config else level_config.get("gif")
+        color = level_config.get("color")
+        # container_down, container_up e resolved têm gif próprio; métricas usam gif do tipo
+        if "gif" in level_config:
+            gif = level_config.get("gif")
+        else:
+            gif = ALERT_CONFIGS.get(alert_type, ALERT_CONFIGS["default"]).get("gif", "")
         return {
             "emoji": level_config.get("emoji", ""),
             "label": level_config.get("label", severity_level.upper()),
@@ -98,11 +102,11 @@ def get_severity_config(severity_level, alert_type="default"):
             "gif": gif,
         }
 
-    # fallback para níveis percentuais
+    # fallback
     percent_level = SEVERITY_LEVELS.get("low")
     return {
         "emoji": percent_level["emoji"],
         "label": percent_level["label"],
-        "color": percent_level["colors"].get(alert_type, percent_level["colors"]["default"]),
-        "gif": percent_level["gifs"].get(alert_type, percent_level["gifs"]["default"]),
+        "color": percent_level["color"],
+        "gif": ALERT_CONFIGS.get(alert_type, ALERT_CONFIGS["default"]).get("gif", ""),
     }

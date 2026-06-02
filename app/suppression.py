@@ -139,8 +139,8 @@ def find_active_sibling(container_name: str, endpoint_id: Optional[int], portain
     sibling_color = 'green' if color == 'blue' else 'blue'
     
     # Reconstruir possíveis nomes do sibling (preservar separador original)
-    # Detectar separador usado no nome original
-    separator = '-' if '-' in container_name[-6:] else '_'  # Últimos 6 chars devem conter o separador
+    # O separador está sempre na posição len(base_name) no nome original
+    separator = container_name[len(base_name)]
     sibling_name = f"{base_name}{separator}{sibling_color}"
     
     logger.debug(f"Procurando sibling '{sibling_name}' para container '{container_name}' no endpoint {endpoint_id}")
