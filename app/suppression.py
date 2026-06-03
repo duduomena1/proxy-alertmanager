@@ -14,6 +14,7 @@ from .constants import (
     CONTAINER_ALWAYS_NOTIFY_ALLOWLIST,
     CONTAINER_IGNORE_ALLOWLIST,
     BLUE_GREEN_SUPPRESSION_ENABLED,
+    BLUE_GREEN_GRACE_SECONDS,
 )
 
 if TYPE_CHECKING:
@@ -278,7 +279,7 @@ class ContainerSuppressor:
 
         # Reset ao ver running
         if current_state == 'running':
-            self._store[key] = {'suppressed': False, 'last': 'running', 'ts': time.time()}
+            self._store[key] = {'suppressed': False, 'last': 'running', 'ts': time.time(), 'bg_grace': None}
             self._save_state()
             return False, 'reset_on_running'
 
@@ -287,14 +288,39 @@ class ContainerSuppressor:
             # VERIFICAÇÃO BLUE/GREEN: Se o sibling estiver ativo, suprimir alerta
             if container_name and portainer_client and endpoint_id is not None:
                 sibling_active, sibling_name = find_active_sibling(container_name, endpoint_id, portainer_client)
-                if sibling_active and sibling_name:
+
+                if sibling_active:
+                    # Sibling rodando → deploy blue/green confirmado, suprimir
                     logger.info(f"Suprimindo alerta de '{container_name}': sibling '{sibling_name}' está ativo (blue/green deployment)")
-                    # Atualizar estado mas não ativar supressão (para permitir alerta se ambos caírem)
-                    entry.update({'last': current_state, 'ts': time.time(), 'suppressed': False})
+                    entry.update({'last': current_state, 'ts': time.time(), 'suppressed': False, 'bg_grace': None})
                     self._store[key] = entry
                     self._save_state()
                     return False, f'blue_green_sibling_active:{sibling_name}'
-            
+
+                # Sibling não está rodando ainda — verifica período de graça para pares blue/green
+                base_name, color = extract_blue_green_base(container_name)
+                if base_name and color and BLUE_GREEN_SUPPRESSION_ENABLED:
+                    now = time.time()
+                    grace_start = entry.get('bg_grace')
+                    if grace_start is None:
+                        # Primeira detecção: inicia período de graça
+                        entry.update({'last': current_state, 'ts': now, 'suppressed': False, 'bg_grace': now})
+                        self._store[key] = entry
+                        self._save_state()
+                        logger.info(f"Blue/green: iniciando período de graça de {BLUE_GREEN_GRACE_SECONDS}s para '{container_name}' (sibling={sibling_name})")
+                        return False, f'blue_green_grace_started:{sibling_name or ""}'
+                    elapsed = now - grace_start
+                    if elapsed < BLUE_GREEN_GRACE_SECONDS:
+                        # Ainda dentro do período de graça → aguardar sibling subir
+                        entry.update({'last': current_state, 'ts': now})
+                        self._store[key] = entry
+                        self._save_state()
+                        return False, f'blue_green_grace_waiting:{sibling_name or ""}:{int(elapsed)}s'
+                    # Período de graça expirou sem sibling subir → falha real, limpa grace
+                    logger.info(f"Blue/green: período de graça expirou ({int(elapsed)}s) para '{container_name}' → tratando como falha real")
+                    entry['bg_grace'] = None
+                    # Fall through para lógica normal de supressão
+
             if entry.get('suppressed'):
                 # já alertou antes e não voltou a running
                 entry.update({'last': current_state, 'ts': time.time()})
