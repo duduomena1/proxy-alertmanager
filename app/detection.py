@@ -78,6 +78,9 @@ def get_severity_level(metric_value, alert_type="default"):
         else:
             return "container_up"
 
+    if metric_value is None:
+        return "low"
+
     if metric_value < 80:
         return "low"
     elif 80 <= metric_value < 90:
