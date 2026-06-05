@@ -30,10 +30,6 @@ def _normalize_name(value: Optional[str]) -> str:
 
 
 def build_container_key(host: Optional[str], labels: Dict) -> str:
-    """
-    Gera uma chave única para o container considerando host e nome.
-    Usa ordem de preferência semelhante ao dedupe: container, container_name, pod, name.
-    """
     host_key = (host or labels.get('host_ip') or labels.get('real_host') or labels.get('instance') or 'unknown')
     host_key = str(host_key).split(':')[0]
     cname = labels.get('container') or labels.get('container_name') or labels.get('pod') or labels.get('name') or 'unknown'
@@ -41,20 +37,11 @@ def build_container_key(host: Optional[str], labels: Dict) -> str:
 
 
 def build_container_key_by_id(host: Optional[str], container_id: Optional[str]) -> str:
-    """
-    Variante de chave usando o container_id (estável no Portainer), mantendo o host.
-    Prefixa com 'id:' para evitar colisão semântica com nomes iguais a IDs.
-    """
     host_key = (host or '').split(':')[0]
     return f"{_normalize_name(host_key)}|id:{_normalize_name(container_id or 'unknown')}"
 
 
 def compute_state(portainer_result: Optional[Dict], metric_value: Optional[float], alert_status: str) -> str:
-    """
-    Determina estado atual do container usando (na ordem): Portainer -> métricas Grafana.
-    Estados retornados: 'running', 'restarting', 'paused', 'exited', 'dead', 'down', 'unknown'.
-    """
-    # 1) Tenta usar Portainer se existir um resultado verificado
     if portainer_result and portainer_result.get('enabled') and portainer_result.get('verified'):
         running = bool(portainer_result.get('running'))
         status_raw = (portainer_result.get('status') or ('running' if running else 'unknown')).lower()
@@ -62,13 +49,8 @@ def compute_state(portainer_result: Optional[Dict], metric_value: Optional[float
             return 'running'
         if status_raw in ['restarting', 'paused', 'exited', 'dead', 'created']:
             return status_raw
-        # Se não reconhecido e não está running, trata como 'down'
         return 'down' if not running else 'running'
 
-    # 2) Fallback pelas métricas do Grafana
-    # Convenção existente no projeto:
-    #  - value=0 + status=firing   -> DOWN
-    #  - value=1 + status=resolved -> UP (running)
     if alert_status and alert_status.lower() == 'resolved' and (metric_value == 1):
         return 'running'
     if alert_status and alert_status.lower() == 'firing' and (metric_value == 0):
@@ -78,22 +60,9 @@ def compute_state(portainer_result: Optional[Dict], metric_value: Optional[float
 
 
 def extract_blue_green_base(container_name: str) -> Tuple[Optional[str], Optional[str]]:
-    """
-    Detecta se o container segue padrão blue/green e extrai o nome base.
-    Suporta: app-blue, app-green, app_blue, app_green (case-insensitive).
-    
-    Returns:
-        (base_name, color) onde color é 'blue' ou 'green', ou (None, None) se não for blue/green.
-    
-    Exemplos:
-        'nginx-blue' -> ('nginx', 'blue')
-        'API_GREEN' -> ('api', 'green')
-        'app-v1' -> (None, None)
-    """
     if not container_name:
         return None, None
     
-    # Regex para detectar sufixo -blue/-green ou _blue/_green (case-insensitive)
     pattern = r'^(.+?)[-_](blue|green)$'
     match = re.match(pattern, container_name, re.IGNORECASE)
     
@@ -107,22 +76,6 @@ def extract_blue_green_base(container_name: str) -> Tuple[Optional[str], Optiona
 
 
 def find_active_sibling(container_name: str, endpoint_id: Optional[int], portainer_client: Optional['PortainerClient']) -> Tuple[bool, Optional[str]]:
-    """
-    Verifica se o sibling blue/green do container está ativo no mesmo endpoint.
-    
-    Args:
-        container_name: Nome do container (ex: 'app-blue')
-        endpoint_id: ID do endpoint Portainer
-        portainer_client: Cliente Portainer para consultar containers
-    
-    Returns:
-        (sibling_is_active, sibling_name) onde sibling_is_active indica se o par está running.
-    
-    Exemplos:
-        'app-blue' com 'app-green' running -> (True, 'app-green')
-        'app-blue' com 'app-green' down -> (False, 'app-green')
-        'nginx' sem padrão blue/green -> (False, None)
-    """
     if not BLUE_GREEN_SUPPRESSION_ENABLED:
         logger.debug("Blue/green suppression desabilitado (BLUE_GREEN_SUPPRESSION_ENABLED=false)")
         return False, None
@@ -133,33 +86,25 @@ def find_active_sibling(container_name: str, endpoint_id: Optional[int], portain
     
     base_name, color = extract_blue_green_base(container_name)
     if not base_name or not color:
-        # Não é um container blue/green
         return False, None
     
-    # Determinar o nome do sibling (trocar blue <-> green)
     sibling_color = 'green' if color == 'blue' else 'blue'
     
-    # Reconstruir possíveis nomes do sibling (preservar separador original)
-    # O separador está sempre na posição len(base_name) no nome original
     separator = container_name[len(base_name)]
     sibling_name = f"{base_name}{separator}{sibling_color}"
     
     logger.debug(f"Procurando sibling '{sibling_name}' para container '{container_name}' no endpoint {endpoint_id}")
     
     try:
-        # Listar todos os containers do endpoint
         containers = portainer_client.list_containers(endpoint_id, all=True)
         
-        # Procurar o sibling e verificar seu estado
         for container in containers:
-            # Docker API retorna Names como lista ['/nome'] ou campo Name
             container_names = container.get('Names', [])
             if isinstance(container_names, list):
                 container_names = [n.lstrip('/') for n in container_names]
             else:
                 container_names = [container.get('Name', '').lstrip('/')]
             
-            # Comparar case-insensitive
             for name in container_names:
                 if name.lower() == sibling_name.lower():
                     state = container.get('State', '').lower()
@@ -176,14 +121,6 @@ def find_active_sibling(container_name: str, endpoint_id: Optional[int], portain
 
 
 class ContainerSuppressor:
-    """
-    State machine simples por container para suprimir alertas repetidos.
-    Regras:
-    - Envia 1º alerta quando entra em estado problemático (down/restarting/exited...)
-    - Suprime os seguintes enquanto não voltar a 'running'
-    - Ao ver 'running', reseta supressão
-    - 'paused' é ignorado se o container estiver na allowlist
-    """
 
     FAILURE_STATES = {'down', 'restarting', 'exited', 'dead', 'unknown', 'stopped', 'created'}
 
@@ -195,19 +132,16 @@ class ContainerSuppressor:
         self.state_file = state_file
         self._store: Dict[str, Dict] = {}
         
-        # Carrega estado persistido (se habilitado)
         if self.persist:
             self._load_state()
 
     def _load_state(self):
-        """Carrega estado de supressão de arquivo JSON."""
         if not os.path.exists(self.state_file):
             return
         
         try:
             with open(self.state_file, 'r') as f:
                 data = json.load(f)
-                # Carrega apenas entradas ainda válidas (dentro do TTL)
                 now = time.time()
                 for key, entry in data.items():
                     if isinstance(entry, dict) and 'ts' in entry:
@@ -219,12 +153,10 @@ class ContainerSuppressor:
             logger.warning(f"Falha ao carregar estado de supressão: {e}")
 
     def _save_state(self):
-        """Salva estado de supressão em arquivo JSON."""
         if not self.persist:
             return
         
         try:
-            # Garante que o diretório existe
             os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
             
             with open(self.state_file, 'w') as f:
@@ -241,98 +173,80 @@ class ContainerSuppressor:
         for k in to_delete:
             self._store.pop(k, None)
         
-        # Salva estado após limpeza (se habilitado)
         if to_delete and self.persist:
             self._save_state()
 
     def should_send(self, key: str, current_state: str, container_name: Optional[str] = None, 
                     portainer_client: Optional['PortainerClient'] = None, endpoint_id: Optional[int] = None) -> Tuple[bool, str]:
-        """
-        Retorna (deve_enviar, motivo). Quando suprime, motivo explica.
-        
-        Args:
-            key: Chave única do container
-            current_state: Estado atual ('running', 'down', etc.)
-            container_name: Nome do container para verificações de allowlist e blue/green
-            portainer_client: Cliente Portainer para verificar sibling blue/green
-            endpoint_id: ID do endpoint Portainer onde o container está rodando
-        """
         self._cleanup()
         if not self.enabled:
             return True, 'feature_disabled'
 
         name_norm = _normalize_name(container_name or '')
-        # Containers completamente ignorados (sem alertas)
         if name_norm in { _normalize_name(n) for n in CONTAINER_IGNORE_ALLOWLIST }:
             return False, 'completely_ignored'
-        # Containers no allowlist de "sempre notificar" nunca são suprimidos
         if name_norm in { _normalize_name(n) for n in CONTAINER_ALWAYS_NOTIFY_ALLOWLIST }:
             return True, 'always_notify_allowlisted'
-        # Ignorar 'paused' quando na allowlist
         if current_state == 'paused' and name_norm in { _normalize_name(n) for n in CONTAINER_PAUSED_ALLOWLIST }:
-            # Mantém registro mas não ativa supressão
             self._store[key] = {'suppressed': False, 'last': 'paused', 'ts': time.time()}
             self._save_state()
             return False, 'paused_allowlisted'
 
         entry = self._store.get(key, {'suppressed': False, 'last': 'unknown', 'ts': 0})
 
-        # Reset ao ver running
         if current_state == 'running':
             self._store[key] = {'suppressed': False, 'last': 'running', 'ts': time.time(), 'bg_grace': None}
             self._save_state()
             return False, 'reset_on_running'
 
-        # Estados problemáticos
         if current_state in self.FAILURE_STATES:
-            # VERIFICAÇÃO BLUE/GREEN: Se o sibling estiver ativo, suprimir alerta
             if container_name and portainer_client and endpoint_id is not None:
                 sibling_active, sibling_name = find_active_sibling(container_name, endpoint_id, portainer_client)
 
                 if sibling_active:
-                    # Sibling rodando → deploy blue/green confirmado, suprimir
+                    if DEBUG_MODE:
+                        print(f"[DEBUG] 🔵🟢 Suprimindo alerta de '{container_name}': sibling '{sibling_name}' está ATIVO (deploy blue/green confirmado)")
                     logger.info(f"Suprimindo alerta de '{container_name}': sibling '{sibling_name}' está ativo (blue/green deployment)")
                     entry.update({'last': current_state, 'ts': time.time(), 'suppressed': False, 'bg_grace': None})
                     self._store[key] = entry
                     self._save_state()
                     return False, f'blue_green_sibling_active:{sibling_name}'
 
-                # Sibling não está rodando ainda — verifica período de graça para pares blue/green
                 base_name, color = extract_blue_green_base(container_name)
                 if base_name and color and BLUE_GREEN_SUPPRESSION_ENABLED:
                     now = time.time()
                     grace_start = entry.get('bg_grace')
                     if grace_start is None:
-                        # Primeira detecção: inicia período de graça
                         entry.update({'last': current_state, 'ts': now, 'suppressed': False, 'bg_grace': now})
                         self._store[key] = entry
                         self._save_state()
+                        if DEBUG_MODE:
+                            print(f"[DEBUG] 🔵🟢 Iniciando período de graça de {BLUE_GREEN_GRACE_SECONDS}s para '{container_name}' (aguardando sibling '{sibling_name}' subir)")
                         logger.info(f"Blue/green: iniciando período de graça de {BLUE_GREEN_GRACE_SECONDS}s para '{container_name}' (sibling={sibling_name})")
                         return False, f'blue_green_grace_started:{sibling_name or ""}'
                     elapsed = now - grace_start
                     if elapsed < BLUE_GREEN_GRACE_SECONDS:
-                        # Ainda dentro do período de graça → aguardar sibling subir
+                        if DEBUG_MODE:
+                            remaining = int(BLUE_GREEN_GRACE_SECONDS - elapsed)
+                            print(f"[DEBUG] 🔵🟢 Aguardando sibling '{sibling_name}' subir: {int(elapsed)}s/{BLUE_GREEN_GRACE_SECONDS}s (faltam {remaining}s)")
                         entry.update({'last': current_state, 'ts': now})
                         self._store[key] = entry
                         self._save_state()
                         return False, f'blue_green_grace_waiting:{sibling_name or ""}:{int(elapsed)}s'
-                    # Período de graça expirou sem sibling subir → falha real, limpa grace
-                    logger.info(f"Blue/green: período de graça expirou ({int(elapsed)}s) para '{container_name}' → tratando como falha real")
+                    if DEBUG_MODE:
+                        print(f"[DEBUG] 🔵🟢 ⚠️ Período de graça EXPIROU ({int(elapsed)}s) para '{container_name}' → sibling '{sibling_name}' NÃO subiu, tratando como FALHA REAL")
+                    logger.warning(f"Blue/green: período de graça expirou ({int(elapsed)}s) para '{container_name}' sem sibling subir → falha real confirmada")
                     entry['bg_grace'] = None
-                    # Fall through para lógica normal de supressão
 
             if entry.get('suppressed'):
-                # já alertou antes e não voltou a running
                 entry.update({'last': current_state, 'ts': time.time()})
                 self._store[key] = entry
                 self._save_state()
                 return False, 'already_suppressed_until_running'
-            # primeira falha desde último running -> envia e ativa supressão
             self._store[key] = {'suppressed': True, 'last': current_state, 'ts': time.time()}
             self._save_state()
             return True, 'first_failure_since_running'
 
-        # Outros estados desconhecidos: não envia por padrão
         entry.update({'last': current_state, 'ts': time.time()})
         self._store[key] = entry
         self._save_state()

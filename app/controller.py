@@ -19,9 +19,7 @@ from .suppression import ContainerSuppressor, compute_state, build_container_key
 
 def create_app():
     app = Flask(__name__)
-    # Cache de dedupe (em memória, por processo)
     dedupe_cache = TTLCache(ttl_seconds=ALERT_COOLDOWN_SECONDS, max_size=ALERT_CACHE_MAX)
-    # Supressor de repetição (por container)
     container_suppressor = ContainerSuppressor()
 
     @app.route('/health', methods=['GET'])
@@ -44,7 +42,6 @@ def create_app():
                 print(f"[ERROR] {str(e)}")
             return f'Error: {str(e)}', 500
 
-    # Inicia monitoramento ativo via Portainer (se habilitado)
     try:
         start_portainer_monitor(dedupe_cache)
     except Exception as exc:
@@ -172,7 +169,6 @@ def create_app():
             server_display = location_info.get('display')
             prometheus_display = location_info.get('prometheus')
 
-            # Fallback: se não encontrou IP/host, usa alertname ou rulename como identificador
             if not server_display:
                 rulename = labels.get('rulename', '').strip()
                 if rulename:
@@ -187,8 +183,6 @@ def create_app():
             portainer_result = None
 
             if alert_type == 'container':
-                # Se PORTAINER_MONITOR_ONLY_SOURCE=true, ignora alertas de container do Grafana
-                # (PortainerMonitor é a única fonte de alertas de container)
                 if PORTAINER_MONITOR_ONLY_SOURCE:
                     if DEBUG_MODE:
                         container_name = labels.get('container') or labels.get('container_name') or 'unknown'
@@ -204,10 +198,9 @@ def create_app():
                     description,
                     severity_config,
                     get_metric_value,
-                    portainer_result=None,  # Grafana não consulta Portainer, apenas formata
+                    portainer_result=None,
                 )
 
-                # LÓGICA DE SUPRESSÃO POR ESTADO (apenas containers)
                 try:
                     current_state = compute_state(portainer_result, metric_value, alert_status)
                     container_info = alert_data.get('enriched_data', {}).get('container_context', {})
@@ -215,7 +208,6 @@ def create_app():
                     host_key = real_ip or clean_host
                     key = build_container_key(host_key, labels)
                     
-                    # Resolver endpoint_id para verificação blue/green
                     endpoint_id = None
                     if portainer_client.enabled and portainer_result:
                         host_for_endpoint = real_ip if real_ip and real_ip != 'unknown' else clean_host
@@ -229,11 +221,14 @@ def create_app():
                         endpoint_id=endpoint_id
                     )
                     if DEBUG_MODE:
-                        print(f"[DEBUG] Container suppression check: key={key} state={current_state} send={should_send} reason={reason}")
+                        print(f"[DEBUG] Suppression check para '{container_name}': state={current_state}, send={should_send}, reason={reason}")
                     if not should_send:
-                        # Pula criação de embed para este alerta
+
                         if DEBUG_MODE:
-                            print("[DEBUG] Suprimindo alerta de container por regra de estado.")
+                            if 'blue_green' in reason:
+                                print(f"[DEBUG] 🔵🟢 Alerta SUPRIMIDO (Blue/Green): {reason}")
+                            else:
+                                print(f"[DEBUG] ⏭️ Alerta SUPRIMIDO: {reason}")
                         continue
                 except Exception as exc:
                     if DEBUG_MODE:
@@ -243,22 +238,20 @@ def create_app():
                 lines = [
                     f"{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}",
                     "",
-                    f"**Nível:** `{severity_config['label']}`",
+                    f"**Nível:** `{severity_config['label']}` • **Uso:** `{value_text}`",
                 ]
                 if server_display:
-                    lines.append(f"**Servidor:** `{server_display}`")
-                if prometheus_display:
-                    lines.append(f"**Prometheus:** `{prometheus_display}`")
-                if _is_meaningful(device):
-                    lines.append(f"**Dispositivo:** `{device}`")
-                if _is_meaningful(mountpoint):
-                    lines.append(f"**Ponto de montagem:** `{mountpoint}`")
-                lines.append(f"**Uso atual:** `{value_text}`")
+                    lines.append(f"**Host:** `{server_display}`")
+                if _is_meaningful(device) and _is_meaningful(mountpoint):
+                    lines.append(f"**Device:** `{device}` • **Mount:** `{mountpoint}`")
+                elif _is_meaningful(device):
+                    lines.append(f"**Device:** `{device}`")
+                elif _is_meaningful(mountpoint):
+                    lines.append(f"**Mount:** `{mountpoint}`")
                 lines.extend([
                     "",
-                    f"**Descrição:** {description}",
-                    f"**Status:** {alert_status.upper()}",
-                    f"**Hora:** {format_timestamp(alert_data.get('startsAt', 'N/A'))}",
+                    f"**📝 Descrição:** {description}",
+                    f"**Status:** `{alert_status.upper()}` • **Hora:** `{format_timestamp(alert_data.get('startsAt', 'N/A'))}`",
                 ])
                 content = "\n".join(lines)
 
@@ -266,18 +259,14 @@ def create_app():
                 lines = [
                     f"{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}",
                     "",
-                    f"**Nível:** `{severity_config['label']}`",
+                    f"**Nível:** `{severity_config['label']}` • **Uso:** `{value_text}`",
                 ]
                 if server_display:
-                    lines.append(f"**Servidor:** `{server_display}`")
-                if prometheus_display:
-                    lines.append(f"**Prometheus:** `{prometheus_display}`")
-                lines.append(f"**Uso atual:** `{value_text}`")
+                    lines.append(f"**Host:** `{server_display}`")
                 lines.extend([
                     "",
-                    f"**Descrição:** {description}",
-                    f"**Status:** {alert_status.upper()}",
-                    f"**Hora:** {format_timestamp(alert_data.get('startsAt', 'N/A'))}",
+                    f"**📝 Descrição:** {description}",
+                    f"**Status:** `{alert_status.upper()}` • **Hora:** `{format_timestamp(alert_data.get('startsAt', 'N/A'))}`",
                 ])
                 content = "\n".join(lines)
 
@@ -285,18 +274,14 @@ def create_app():
                 lines = [
                     f"{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}",
                     "",
-                    f"**Nível:** `{severity_config['label']}`",
+                    f"**Nível:** `{severity_config['label']}` • **Uso:** `{value_text}`",
                 ]
                 if server_display:
-                    lines.append(f"**Servidor:** `{server_display}`")
-                if prometheus_display:
-                    lines.append(f"**Prometheus:** `{prometheus_display}`")
-                lines.append(f"**Uso atual:** `{value_text}`")
+                    lines.append(f"**Host:** `{server_display}`")
                 lines.extend([
                     "",
-                    f"**Descrição:** {description}",
-                    f"**Status:** {alert_status.upper()}",
-                    f"**Hora:** {format_timestamp(alert_data.get('startsAt', 'N/A'))}",
+                    f"**📝 Descrição:** {description}",
+                    f"**Status:** `{alert_status.upper()}` • **Hora:** `{format_timestamp(alert_data.get('startsAt', 'N/A'))}`",
                 ])
                 content = "\n".join(lines)
 
@@ -307,17 +292,15 @@ def create_app():
                     f"**Nível:** `{severity_config['label']}`",
                 ]
                 if server_display:
-                    lines.append(f"**Servidor:** `{server_display}`")
-                if prometheus_display:
-                    lines.append(f"**Prometheus:** `{prometheus_display}`")
+                    lines.append(f"**Host:** `{server_display}`")
                 if _is_meaningful(device):
                     lines.append(f"**Componente:** `{device}`")
-                lines.append(f"**Valor:** `{value_text}`")
+                if value_text:
+                    lines.append(f"**Valor:** `{value_text}`")
                 lines.extend([
                     "",
-                    f"**Descrição:** {description}",
-                    f"**Status:** {alert_status.upper()}",
-                    f"**Hora:** {format_timestamp(alert_data.get('startsAt', 'N/A'))}",
+                    f"**📝 Descrição:** {description}",
+                    f"**Status:** `{alert_status.upper()}` • **Hora:** `{format_timestamp(alert_data.get('startsAt', 'N/A'))}`",
                 ])
                 content = "\n".join(lines)
 
@@ -348,7 +331,6 @@ def create_app():
                     "inline": True,
                 })
 
-                # Usar IP do endpoint (via mapa) se disponível
                 mapped_ip = None
                 if portainer_result and portainer_result.get('endpoint_id') is not None:
                     mapped_ip = portainer_client.get_host_for_endpoint(portainer_result.get('endpoint_id'))
@@ -393,7 +375,6 @@ def create_app():
             if severity_config['gif']:
                 embed["image"] = {"url": severity_config['gif']}
 
-            # ==== COLETA DE INFORMAÇÕES EXTRAS (LABELS & ANNOTATIONS) ====
             ignored_labels = {'alertname', 'severity', 'instance', 'job', 'host_ip', 'real_host', 'container', 'container_name', 'pod', 'pod_name', 'name', 'namespace', 'node', 'image', 'device', 'mountpoint', 'fstype', 'prometheus_server', 'service_type', 'environment'}
             extra_labels = {k: v for k, v in labels.items() if k not in ignored_labels and v and str(v).lower() not in ['n/a', 'unknown', 'none', 'null', '']}
             
@@ -419,7 +400,6 @@ def create_app():
                     "value": ann_str,
                     "inline": False,
                 })
-            # Flag para evitar dedupe quando no allowlist de "sempre notificar"
             always_notify = False
             if alert_type == 'container':
                 cinfo = alert_data.get('enriched_data', {}).get('container_context', {})
@@ -438,14 +418,12 @@ def create_app():
             })
 
         for alert in processed_alerts:
-            # Dedupe/cooldown: evita reenvio do mesmo alerta por 60m (exceto always_notify)
             if ALERT_DEDUP_ENABLED and not alert.get('always_notify', False):
                 fp = build_alert_fingerprint(alert['type'], alert['labels'], alert['enriched'], alert_status=alert['status'])
                 if dedupe_cache.is_within_ttl(fp):
                     if DEBUG_MODE:
                         print(f"[DEBUG] DEDUPE: suprimindo alerta duplicado dentro do cooldown: {fp}")
                     continue
-                # registra envio
                 dedupe_cache.touch(fp)
             payload_embeds = [alert["embed"]]
             if DEBUG_MODE:
@@ -480,7 +458,6 @@ def create_app():
         resp = send_discord_payload(content=f"🚨 **{title}**\n{message}{metric_info}", embeds=payload_embeds)
         return '', resp.status_code
 
-    # --- Minimal templates parsing/formatting (migrated sem alterações de comportamento) ---
     import re
 
     def parse_minimal_template_data(text):

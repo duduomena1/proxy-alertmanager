@@ -102,8 +102,6 @@ def extract_metric_value_enhanced(values, value_string, alert_type="default", de
             if debug_mode:
                 print(f"[DEBUG] Failed to extract from valueString: {e}")
 
-    # Fallback: tenta extrair percentual da description/summary (Prometheus Alertmanager
-    # renderiza {{ $value }} nas anotações antes de enviar, então o valor real fica no texto)
     if extracted_value is None and description and alert_type in ['cpu', 'memory', 'disk']:
         pct_match = re.search(r'(\d+(?:\.\d+)?)\s*%', str(description))
         if pct_match:

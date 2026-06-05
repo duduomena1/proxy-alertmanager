@@ -94,11 +94,14 @@ Values: {json.dumps(values, indent=2)}
 
     container_info = validation_result['container_info']
     container_name = container_info.get('container_name', 'Container Desconhecido')
-    # Se não identificamos via labels, use o nome detectado pelo Portainer
     if container_name in [None, '', 'Container Desconhecido'] and portainer_result and portainer_result.get('matched_name'):
         container_name = portainer_result.get('matched_name')
     validated_metric_value = validation_result['metric_value']
 
+    from .suppression import extract_blue_green_base
+    base_name, color = extract_blue_green_base(container_name) if container_name else (None, None)
+    is_blue_green = base_name is not None and color is not None
+    
     if validated_metric_value == 0:
         container_status = "🔴 **OFFLINE/PARADO**"
         status_icon = "🚨"
@@ -109,33 +112,26 @@ Values: {json.dumps(values, indent=2)}
         container_status = "⚠️ **STATUS DESCONHECIDO**"
         status_icon = "⚠️"
 
-    # Preferir IP do endpoint do Portainer, se disponível no mapa
     server_ip = None
     if portainer_result and portainer_result.get('endpoint_id') is not None:
         mapped = portainer_client.get_host_for_endpoint(portainer_result.get('endpoint_id'))
         if mapped:
             server_ip = mapped
     
-    # Prioridade: server_ip do Portainer > real_ip > clean_host (que já tem fallback para instance)
-    # Garante que sempre teremos um IP para exibir
     display_ip = server_ip or real_ip or clean_host or labels.get('instance', 'IP não identificado')
     if display_ip and ':' in str(display_ip):
-        display_ip = display_ip.split(':')[0]  # Remove porta se houver
+        display_ip = display_ip.split(':')[0]
     
     server_info = f"`{display_ip}`"
-    if container_info.get('node'):
-        server_info += f" (Node: `{container_info.get('node')}`)"
-
-    warning_section = ""
-    if validation_result['warnings']:
-        warning_section = f"\n**⚠️ AVISOS:** {'; '.join(validation_result['warnings'])}\n"
+    node = container_info.get('node')
+    if node and node not in [display_ip, real_ip, clean_host, None, 'N/A', '']:
+        server_info += f" • Node: `{node}`"
 
     portainer_section = ""
     if portainer_result and portainer_result.get('enabled'):
         if portainer_result.get('verified'):
             running = portainer_result.get('running')
             status_raw = (portainer_result.get('status') or ('running' if running else 'unknown')).lower()
-            # Normaliza estados: 'missing' e 'exited' -> 'stopped'
             if status_raw in ['missing', 'exited', 'dead', 'created', 'paused']:
                 status = 'stopped'
             elif running:
@@ -145,56 +141,65 @@ Values: {json.dumps(values, indent=2)}
             emoji = "🟢" if running else "🔴"
             lines = [f"{emoji} Estado: `{status}`"]
             health = portainer_result.get('health')
-            if health:
+            if health and health not in ['none', '', None]:
                 lines.append(f"🩺 Health: `{health}`")
             matched = portainer_result.get('matched_name')
-            if matched:
+            if matched and matched.lower() != container_name.lower():
                 lines.append(f"📛 Identificado como: `{matched}`")
             portainer_section = "\n" + "\n".join(lines)
         else:
             reason = portainer_result.get('error') or 'não verificado'
-            portainer_section = f"\n**ℹ️ Portainer:** `{reason}`"
+            portainer_section = f"\nℹ️ Portainer: `{reason}`"
 
-    parts = [f"{status_icon} **ALERTA DE CONTAINER** {severity_config['emoji']}"]
+    if is_blue_green:
+        title = f"{status_icon} **ALERTA DE CONTAINER** {severity_config['emoji']} 🔵🟢 Blue/Green"
+    else:
+        title = f"{status_icon} **ALERTA DE CONTAINER** {severity_config['emoji']}"
+    parts = [title]
 
-    # Identificação
     parts.append("\n**🏷️ IDENTIFICAÇÃO**")
-    parts.append(f"**Container:** `{container_name}`")
-    parts.append(f"**Servidor/Host:** {server_info}")
+    if is_blue_green:
+        parts.append(f"**Container:** `{container_name}` (Ambiente: `{color.upper()}`)")  
+    else:
+        parts.append(f"**Container:** `{container_name}`")
+    parts.append(f"**Host:** {server_info}")
     
-    # Adiciona o campo de instância original para referência
-    original_instance = enriched_info.get('original_instance')
-    if original_instance and original_instance != display_ip and original_instance not in ['N/A', 'unknown']:
-        parts.append(f"**Instância:** `{original_instance}`")
-    
-    parts.append(f"**Prometheus:** `{prometheus_source}`{portainer_section}")
+    prometheus_line = f"**Fonte:** `{prometheus_source}`"
+    if portainer_result and portainer_result.get('enabled') and portainer_result.get('verified'):
+        prometheus_line += f"{portainer_section}"
+    parts.append(prometheus_line)
 
-    # STATUS ATUAL: só se houver namespace
+    parts.append("\n**📊 STATUS**")
+    parts.append(f"**Estado:** {container_status}")
+    
     ns = container_info.get('namespace')
-    if ns and ns not in ['N/A', '', None]:
-        parts.append("\n**📊 STATUS ATUAL**")
-        parts.append(f"**Estado:** {container_status}")
-        parts.append(f"**Tipo:** `{container_info.get('instance_type', 'Container')}`")
+    if ns and ns not in ['N/A', '', None, 'default']:
         parts.append(f"**Namespace:** `{ns}`")
+    
+    instance_type = container_info.get('instance_type', '')
+    if instance_type and 'Kubernetes' in instance_type:
+        parts.append(f"**Tipo:** `{instance_type}`")
 
-    # DETALHES TÉCNICOS: somente se houver pelo menos um campo útil
     details_lines = []
-    if container_info.get('job'):
-        details_lines.append(f"**Job:** `{container_info.get('job')}`")
-    if container_info.get('service'):
-        details_lines.append(f"**Service:** `{container_info.get('service')}`")
-    if container_info.get('image'):
-        details_lines.append(f"**Image:** `{container_info.get('image')}`")
+    
+    service = container_info.get('service')
+    if service and service not in ['', None, 'N/A']:
+        details_lines.append(f"**Service:** `{service}`")
+    
+    image = container_info.get('image')
+    if image and image not in ['', None, 'N/A']:
+        if len(image) > 60:
+            image_parts = image.split('/')
+            image = image_parts[-1].split('@')[0].split(':')[0]
+        if image:
+            details_lines.append(f"**Image:** `{image}`")
+    
     if details_lines:
-        parts.append("\n**🔍 DETALHES TÉCNICOS**")
+        parts.append("\n**🔍 DETALHES**")
         parts.extend(details_lines)
-    if warning_section:
-        parts.append(warning_section)
 
-    # INFORMAÇÕES DO ALERTA
-    parts.append("\n**📝 INFORMAÇÕES DO ALERTA**")
+    parts.append("\n**📝 ALERTA**")
     parts.append(f"**Descrição:** {description}")
-    parts.append(f"**Status do Alerta:** `{alert_status.upper()}`")
-    parts.append(f"**Timestamp:** `{format_timestamp(alert_data.get('startsAt', 'N/A'))}`")
+    parts.append(f"**Status:** `{alert_status.upper()}` • **Hora:** `{format_timestamp(alert_data.get('startsAt', 'N/A'))}`")
 
     return "\n".join(parts)

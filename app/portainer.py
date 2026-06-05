@@ -19,12 +19,10 @@ from .constants import (
     DEBUG_MODE,
 )
 
-# Suprime globalmente avisos de HTTPS não verificado quando TLS estiver desativado para Portainer
 if not PORTAINER_VERIFY_TLS:
     try:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        # Alguns ambientes usam o pacote urllib3 dentro de requests
-        requests.packages.urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)  # type: ignore[attr-defined]
+        requests.packages.urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         if DEBUG_MODE:
             print("[DEBUG] Avisos globais de InsecureRequestWarning desabilitados (PORTAINER_VERIFY_TLS=false)")
     except Exception:
@@ -59,14 +57,13 @@ def _load_endpoint_map(file_path: Optional[str]) -> Dict[str, int]:
     if not raw:
         return mapping
 
-    # Tenta JSON primeiro
     try:
         data = json.loads(raw)
         if isinstance(data, dict):
             for key, value in data.items():
                 try:
                     if isinstance(value, dict):
-                        # formato estendido: { "host": {"id": 4, "ssh_user": "ubuntu"} }
+
                         mapping[key.lower()] = int(value.get("id"))
                     else:
                         mapping[key.lower()] = int(value)
@@ -77,7 +74,6 @@ def _load_endpoint_map(file_path: Optional[str]) -> Dict[str, int]:
     except json.JSONDecodeError:
         pass
 
-    # Fallback simples estilo "host: endpoint"
     for line in raw.splitlines():
         line = line.strip()
         if not line or line.startswith('#'):
@@ -138,22 +134,18 @@ class PortainerClient:
         self._endpoints_cache: Dict[int, Dict] = {}
         self._last_refresh = 0.0
 
-        # Suprime avisos de HTTPS inseguro quando a verificação TLS está desativada
         if self.enabled and not self.verify_tls:
             try:
                 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
                 if DEBUG_MODE:
                     print("[DEBUG] Avisos de InsecureRequestWarning desabilitados (PORTAINER_VERIFY_TLS=false)")
             except Exception:
-                # Fallback silencioso caso urllib3 não esteja disponível por algum motivo
                 pass
 
         if self.enabled and DEBUG_MODE:
             print("[DEBUG] PortainerClient habilitado")
             if self.endpoint_map:
                 print(f"[DEBUG] Portainer endpoint_map carregado ({len(self.endpoint_map)} chaves): {list(self.endpoint_map.keys())[:10]}{'...' if len(self.endpoint_map)>10 else ''}")
-
-    # ---------- Setup helpers ----------
 
     def _headers(self) -> Dict[str, str]:
         return {
@@ -187,7 +179,6 @@ class PortainerClient:
             data = resp.json()
             if isinstance(data, list):
                 self._endpoints_cache = {item["Id"]: item for item in data if "Id" in item}
-                # também index por nome para fallback
                 self._endpoint_name_map = {
                     str(item.get("Name", "")).lower(): item["Id"]
                     for item in data
@@ -216,12 +207,10 @@ class PortainerClient:
         return dict(self._endpoints_cache)
 
     def list_containers(self, endpoint_id: int, all: bool = False) -> List[Dict]:
-        """Lista containers em um endpoint específico."""
         params = {'all': 1 if all else 0}
         resp = self._request("GET", f"/endpoints/{endpoint_id}/docker/containers/json", params=params)
         return resp.json() if resp.content else []
 
-    # ---------- Public API ----------
     def get_host_for_endpoint(self, endpoint_id: int, prefer_ip: bool = True) -> Optional[str]:
         """Retorna uma chave (host/IP) do mapa que aponte para o endpoint_id.
         Se prefer_ip=True, tenta um IP primeiro; caso contrário, retorna a primeira chave encontrada.
@@ -249,17 +238,14 @@ class PortainerClient:
 
         self._ensure_endpoints_cache()
 
-        # 1) Map file
         if cleaned in self.endpoint_map:
             return self.endpoint_map[cleaned]
 
-        # tenta variantes simples (ex.: remove domínio)
         if '.' in cleaned:
             short = cleaned.split('.')[0]
             if short in self.endpoint_map:
                 return self.endpoint_map[short]
 
-        # 2) match por nome de endpoint (case insensitive)
         endpoint_name_map = getattr(self, "_endpoint_name_map", {})
         if cleaned in endpoint_name_map:
             return endpoint_name_map[cleaned]
@@ -280,7 +266,6 @@ class PortainerClient:
         normalized_names = {_normalize_name(n) for n in names if n}
         normalized_names.discard(None)
 
-        # Match exato
         for candidate in normalized_candidates:
             if candidate in normalized_names:
                 return candidate
@@ -288,7 +273,6 @@ class PortainerClient:
         if self.strict_name_match:
             return None
 
-        # Fallback por prefixo/contain
         for name in normalized_names:
             for candidate in normalized_candidates:
                 if candidate and name and (candidate in name or name in candidate):
@@ -312,7 +296,6 @@ class PortainerClient:
             if value:
                 candidates.append(str(value))
 
-        # Compose/Stack labels
         compose_service = labels.get('com.docker.compose.service') or labels.get('label_com_docker_compose_service')
         if compose_service:
             candidates.append(str(compose_service))
@@ -324,7 +307,6 @@ class PortainerClient:
         return candidates
 
     def verify_container(self, host: Optional[str], labels: Dict) -> Dict:
-        """Retorna dict com informações da verificação via Portainer."""
         result = {
             'enabled': self.enabled,
             'verified': False,
@@ -373,7 +355,6 @@ class PortainerClient:
             result['status'] = match_info.get('status') or 'running'
             return result
 
-        # tenta all=1
         try:
             all_resp = self._request(
                 "GET",
@@ -405,7 +386,6 @@ class PortainerClient:
             result['status'] = match_info.get('status') or 'unknown'
             return result
 
-        # Recupera detalhes completos
         try:
             inspect_resp = self._request(
                 "GET",
@@ -448,7 +428,6 @@ class PortainerClient:
                 }
         return None
 
-    # ---------- Map reload ----------
     def _maybe_reload_endpoint_map(self) -> None:
         if not self.endpoint_map_path:
             return
@@ -466,7 +445,6 @@ class PortainerClient:
                 if DEBUG_MODE:
                     print(f"[DEBUG] Portainer endpoint_map recarregado ({len(self.endpoint_map)} chaves)")
 
-    # ---------- Helpers públicos extra ----------
     def get_host_for_endpoint(self, endpoint_id: int, prefer_ip: bool = True) -> Optional[str]:
         """Retorna uma chave (host/IP) do mapa que aponte para o endpoint_id.
         Se prefer_ip=True, tenta um IP primeiro; caso contrário, retorna a primeira chave encontrada.
@@ -484,7 +462,6 @@ class PortainerClient:
         return candidate_any
 
     def get_ssh_user_for_endpoint(self, endpoint_id: int, prefer_ip: bool = True) -> Optional[str]:
-        """Retorna ssh_user associado ao endpoint_id, se definido no JSON (formato estendido)."""
         if not getattr(self, 'endpoint_meta', None):
             return None
         import re

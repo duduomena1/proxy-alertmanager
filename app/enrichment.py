@@ -24,14 +24,12 @@ def extract_real_ip_and_source(labels, annotations=None):
             prometheus_source = candidate
             break
 
-    # Primeiro, tenta labels específicos do Prometheus com IP extraído
     ip_candidates = [
         labels.get('host_ip'),
         labels.get('real_host'),
         labels.get('__address__'),
     ]
 
-    # Procura por IPs já extraídos (sem porta)
     for candidate in ip_candidates:
         if candidate and candidate not in ['N/A', '', 'localhost', '127.0.0.1']:
             ip_match = re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$', str(candidate))
@@ -39,7 +37,6 @@ def extract_real_ip_and_source(labels, annotations=None):
                 real_ip = ip_match.group(1)
                 break
 
-    # Se não encontrou, tenta extrair de campos que podem conter IP:porta
     if not real_ip:
         ip_port_candidates = [
             labels.get('instance'),
@@ -54,25 +51,20 @@ def extract_real_ip_and_source(labels, annotations=None):
 
         for candidate in ip_port_candidates:
             if candidate and candidate not in ['N/A', '', 'localhost', '127.0.0.1', 'localhost:9100']:
-                # Tenta extrair IP de formatos como "192.168.1.100:9100"
                 if ':' in str(candidate):
                     potential_ip = str(candidate).split(':')[0]
-                    # Valida se é um IP válido
                     if re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$', potential_ip):
                         real_ip = potential_ip
                         break
-                    # Ou se é um hostname válido (não começando com 'node-exporter' ou 'node')
                     elif len(potential_ip) > 3 and not potential_ip.startswith(('node-exporter', 'node')):
                         real_ip = potential_ip
                         break
                 else:
-                    # Tenta extrair IP direto (sem porta)
                     ip_match = re.match(r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', str(candidate))
                     if ip_match:
                         real_ip = ip_match.group(1)
                         break
 
-    # Fallback extrator de IP no alertname (ex: "Memory - App002 - 172.16.104.21")
     if not real_ip:
         alertname = labels.get('alertname', '')
         if alertname:
@@ -82,7 +74,6 @@ def extract_real_ip_and_source(labels, annotations=None):
                     real_ip = ip
                     break
 
-    # Fallback extrator de IP em Annotations (útil para DatasourceError do Grafana)
     if not real_ip and annotations:
         for key, value in annotations.items():
             if value and isinstance(value, str):
@@ -102,7 +93,6 @@ def extract_real_ip_and_source(labels, annotations=None):
         'clean_host': real_ip if real_ip else original_instance.split(':')[0] if ':' in original_instance else original_instance,
     }
     
-    # Debug: mostra quais labels foram usados para extrair o IP
     if not real_ip or real_ip == 'unknown':
         import os
         if os.getenv("DEBUG_MODE", "False").lower() == "true":

@@ -93,7 +93,6 @@ def get_severity_config(severity_level, alert_type="default"):
     level_config = SEVERITY_LEVELS.get(severity_level)
     if level_config:
         color = level_config.get("color")
-        # container_down, container_up e resolved têm gif próprio; métricas usam gif do tipo
         if "gif" in level_config:
             gif = level_config.get("gif")
         else:
@@ -105,7 +104,6 @@ def get_severity_config(severity_level, alert_type="default"):
             "gif": gif,
         }
 
-    # fallback
     percent_level = SEVERITY_LEVELS.get("low")
     return {
         "emoji": percent_level["emoji"],
