@@ -33,6 +33,9 @@ CONTAINER_PAUSED_ALLOWLIST = set([s.strip() for s in _paused_allowlist_env.split
 
 BLUE_GREEN_SUPPRESSION_ENABLED = os.getenv("BLUE_GREEN_SUPPRESSION_ENABLED", "true").lower() == "true"
 BLUE_GREEN_GRACE_SECONDS = int(os.getenv("BLUE_GREEN_GRACE_SECONDS", "120"))
+BLUE_GREEN_NEVER_ALERT = os.getenv("BLUE_GREEN_NEVER_ALERT", "true").lower() == "true"
+
+CONTAINER_SEND_RESOLVED_ALERTS = os.getenv("CONTAINER_SEND_RESOLVED_ALERTS", "false").lower() == "true"
 
 _always_notify_allowlist_env = os.getenv("CONTAINER_ALWAYS_NOTIFY_ALLOWLIST", "").strip()
 CONTAINER_ALWAYS_NOTIFY_ALLOWLIST = set([s.strip() for s in _always_notify_allowlist_env.split(",") if s.strip()])

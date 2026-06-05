@@ -63,13 +63,18 @@ def extract_blue_green_base(container_name: str) -> Tuple[Optional[str], Optiona
     if not container_name:
         return None, None
     
+    import re
+    cleaned_name = re.sub(r'^[0-9a-f]{12,}_', '', container_name, flags=re.IGNORECASE)
+    
     pattern = r'^(.+?)[-_](blue|green)$'
-    match = re.match(pattern, container_name, re.IGNORECASE)
+    match = re.match(pattern, cleaned_name, re.IGNORECASE)
     
     if match:
         base_name = match.group(1).lower()
         color = match.group(2).lower()
-        logger.debug(f"Container '{container_name}' detectado como blue/green: base='{base_name}', color='{color}'")
+        if cleaned_name != container_name:
+            logger.debug(f"Container '{container_name}' tem ID prefixado, nome limpo: '{cleaned_name}'")
+        logger.debug(f"Container '{cleaned_name}' detectado como blue/green: base='{base_name}', color='{color}'")
         return base_name, color
     
     return None, None
@@ -90,7 +95,9 @@ def find_active_sibling(container_name: str, endpoint_id: Optional[int], portain
     
     sibling_color = 'green' if color == 'blue' else 'blue'
     
-    separator = container_name[len(base_name)]
+    import re
+    cleaned_name = re.sub(r'^[0-9a-f]{12,}_', '', container_name, flags=re.IGNORECASE)
+    separator = cleaned_name[len(base_name)]
     sibling_name = f"{base_name}{separator}{sibling_color}"
     
     logger.debug(f"Procurando sibling '{sibling_name}' para container '{container_name}' no endpoint {endpoint_id}")
@@ -106,7 +113,8 @@ def find_active_sibling(container_name: str, endpoint_id: Optional[int], portain
                 container_names = [container.get('Name', '').lstrip('/')]
             
             for name in container_names:
-                if name.lower() == sibling_name.lower():
+                clean_name = re.sub(r'^[0-9a-f]{12,}_', '', name, flags=re.IGNORECASE)
+                if clean_name.lower() == sibling_name.lower():
                     state = container.get('State', '').lower()
                     is_running = state == 'running'
                     logger.debug(f"Sibling '{name}' encontrado com estado '{state}' (running={is_running})")

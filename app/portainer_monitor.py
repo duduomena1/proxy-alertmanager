@@ -7,12 +7,14 @@ from .constants import (
     ALERT_DEDUP_ENABLED,
     ALERT_COOLDOWN_SECONDS,
     CONTAINER_ALWAYS_NOTIFY_ALLOWLIST,
+    CONTAINER_SEND_RESOLVED_ALERTS,
     PORTAINER_ACTIVE_MONITOR,
     PORTAINER_MONITOR_INTERVAL_SECONDS,
     PORTAINER_MONITOR_ENDPOINTS,
     PORTAINER_MONITOR_DOWN_CONFIRMATIONS,
     PORTAINER_MONITOR_SCOPE,
     PORTAINER_MONITOR_ONLY_SOURCE,
+    BLUE_GREEN_NEVER_ALERT,
 )
 from .portainer import portainer_client
 from .dedupe import TTLCache, build_alert_fingerprint
@@ -38,7 +40,16 @@ class PortainerMonitor(threading.Thread):
         self._down_counts: Dict[Tuple[int, str], int] = {}
         self.down_confirmations = max(1, PORTAINER_MONITOR_DOWN_CONFIRMATIONS)
         self._id_to_name: Dict[Tuple[int, str], str] = {}
+        self._alerted_stopped: Dict[Tuple[int, str], float] = {}
         self.suppressor = ContainerSuppressor()
+
+    @staticmethod
+    def _clean_container_name(name: str) -> str:
+        import re
+        if not name:
+            return name
+        cleaned = re.sub(r'^[0-9a-f]{12,}_', '', name, flags=re.IGNORECASE)
+        return cleaned
 
     def stop(self):
         self._stop.set()
@@ -138,8 +149,9 @@ class PortainerMonitor(threading.Thread):
                 _entry_names = entry.get('Names') or []
                 if _entry_names:
                     _cname = _entry_names[0].lstrip('/')
-                    self._id_to_name[(eid, cid)] = _cname
-                    current_name_to_cid[_cname.lower()] = cid
+                    _cname_clean = self._clean_container_name(_cname)
+                    self._id_to_name[(eid, cid)] = _cname_clean
+                    current_name_to_cid[_cname_clean.lower()] = cid
 
                 key = (eid, cid)
                 if running:
@@ -153,24 +165,19 @@ class PortainerMonitor(threading.Thread):
                 if prev is True and running is False:
                     if self._down_counts.get(key, 0) >= self.down_confirmations:
                         self._emit_down_alert(eid, entry)
+                        self._alerted_stopped[key] = time.time()
                     else:
                         if DEBUG_MODE:
                             rn = entry.get('Names', [''])[0].lstrip('/') if entry.get('Names') else (cid[:12])
                             print(f"[DEBUG] PortainerMonitor: queda não confirmada (eid={eid}, name={rn}, down_count={self._down_counts.get(key,0)}, ran_count={self._running_counts.get(key,0)})")
                 elif prev is False and running is True:
-                    if self._running_counts.get(key, 0) >= 1:
+                    if CONTAINER_SEND_RESOLVED_ALERTS and self._running_counts.get(key, 0) >= 1:
                         self._emit_up_alert(eid, entry)
                     else:
                         if DEBUG_MODE:
                             rn = entry.get('Names', [''])[0].lstrip('/') if entry.get('Names') else (cid[:12])
-                            print(f"[DEBUG] PortainerMonitor: recuperação não confirmada (eid={eid}, name={rn}, run_count={self._running_counts.get(key,0)})")
-                elif prev is not True and running is False:
-                    if self._down_counts.get(key, 0) >= self.down_confirmations:
-                        self._emit_down_alert(eid, entry)
-                    else:
-                        if DEBUG_MODE:
-                            rn = entry.get('Names', [''])[0].lstrip('/') if entry.get('Names') else (cid[:12])
-                            print(f"[DEBUG] PortainerMonitor: estado não-running observado (eid={eid}, name={rn}), aguardando confirmações (down_count={self._down_counts.get(key,0)})")
+                            reason = "RESOLVED alerts desabilitados" if not CONTAINER_SEND_RESOLVED_ALERTS else "recuperação não confirmada"
+                            print(f"[DEBUG] PortainerMonitor: {reason} (eid={eid}, name={rn}, run_count={self._running_counts.get(key,0)})")
 
 
             for (peid, pcid), was_running in list(self._prev_state.items()):
@@ -185,6 +192,10 @@ class PortainerMonitor(threading.Thread):
                                 print(f"[DEBUG] PortainerMonitor: container '{old_name}' recriado (old={pcid[:12]}, new={new_cid[:12]}), ignorando alerta de DOWN")
                             continue
                     key = (peid, pcid)
+                    if key in self._alerted_stopped and (time.time() - self._alerted_stopped[key]) < 60:
+                        if DEBUG_MODE:
+                            print(f"[DEBUG] PortainerMonitor: desaparecimento ignorado - já alertado por stopped recentemente (cid={pcid[:12]})")
+                        continue
                     self._down_counts[key] = self._down_counts.get(key, 0) + 1
                     if self._down_counts[key] >= self.down_confirmations:
                         stored_name = self._id_to_name.get((peid, pcid))
@@ -197,6 +208,11 @@ class PortainerMonitor(threading.Thread):
 
             for key, val in current.items():
                 self._prev_state[key] = val
+
+            now = time.time()
+            stale_alerted = [k for k, ts in list(self._alerted_stopped.items()) if (now - ts) > 300]
+            for k in stale_alerted:
+                del self._alerted_stopped[k]
 
             stale_keys = [k for k in list(self._running_counts.keys()) if k[0] == eid and k not in current]
             for sk in stale_keys:
@@ -212,13 +228,23 @@ class PortainerMonitor(threading.Thread):
                 container_entry.get('Labels', {}).get('com.docker.compose.service', '') or
                 f"container-{container_entry.get('Id', 'unknown')[:12]}"
             )
+        
+        container_name = self._clean_container_name(container_name)
 
         if DEBUG_MODE:
             print(f"[DEBUG] PortainerMonitor: recuperação detectada - endpoint={endpoint_id} container={container_name}")
 
-        from .suppression import extract_blue_green_base
+        from .suppression import extract_blue_green_base, find_active_sibling
         base_name, color = extract_blue_green_base(container_name) if container_name else (None, None)
         is_blue_green = base_name is not None and color is not None
+
+        if is_blue_green and BLUE_GREEN_NEVER_ALERT:
+            sibling_running, sibling_name = find_active_sibling(container_name, endpoint_id, portainer_client)
+            
+            if sibling_running:
+                if DEBUG_MODE:
+                    print(f"[DEBUG] PortainerMonitor UP: container blue/green '{container_name}' resolved suprimido - sibling '{sibling_name}' já estava ativo")
+                return
 
         alert_data = {
             'status': 'resolved',
@@ -340,13 +366,26 @@ class PortainerMonitor(threading.Thread):
                 container_entry.get('Labels', {}).get('com.docker.compose.service', '') or
                 f"container-{container_entry.get('Id', 'unknown')[:12]}"
             )
+        
+        container_name = self._clean_container_name(container_name)
 
         if DEBUG_MODE:
             print(f"[DEBUG] PortainerMonitor: queda detectada - endpoint={endpoint_id} container={container_name}")
 
-        from .suppression import extract_blue_green_base
+        from .suppression import extract_blue_green_base, find_active_sibling
         base_name, color = extract_blue_green_base(container_name) if container_name else (None, None)
         is_blue_green = base_name is not None and color is not None
+
+        if is_blue_green and BLUE_GREEN_NEVER_ALERT:
+            sibling_running, sibling_name = find_active_sibling(container_name, endpoint_id, portainer_client)
+            
+            if sibling_running:
+                if DEBUG_MODE:
+                    print(f"[DEBUG] PortainerMonitor DOWN: container blue/green '{container_name}' suprimido - sibling '{sibling_name}' está ativo")
+                return
+            else:
+                if DEBUG_MODE:
+                    print(f"[WARNING] PortainerMonitor DOWN: container blue/green '{container_name}' CAIU e sibling NÃO rodando - ALERTANDO!")
 
         alert_data = {
             'status': 'firing',
