@@ -101,6 +101,7 @@ class PortainerMonitor(threading.Thread):
                 continue
 
             current: Dict[Tuple[int, str], bool] = {}
+            current_name_to_cid: Dict[str, str] = {}
             seen_containers = {}
             for entry in all_containers or []:
                 cid = entry.get('Id')
