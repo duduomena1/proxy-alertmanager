@@ -38,6 +38,14 @@ def detect_alert_type(labels, annotations, alertname):
     if is_container_alert(labels):
         return 'container'
 
+    # Verificar labels diretas (ex: MEMORY, CPU, DISK)
+    if 'MEMORY' in labels or 'memory' in labels:
+        return 'memory'
+    if 'CPU' in labels or 'cpu' in labels:
+        return 'cpu'
+    if 'DISK' in labels or 'disk' in labels:
+        return 'disk'
+
     if 'postgres' in service_type:
         return 'default'
     elif 'container' in service_type or 'docker' in service_type:
