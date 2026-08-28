@@ -99,4 +99,22 @@ SEVERITY_LEVELS = {
         "color": int(os.getenv("RESOLVED_COLOR", "32768")),
         "gif": os.getenv("RESOLVED_GIF", ""),
     },
+    "uptimekuma_up": {
+        "emoji": "✅",
+        "label": "UP",
+        "color": int(os.getenv("UPTIME_KUMA_UP_COLOR", "65280")),
+        "gif": os.getenv("UPTIME_KUMA_GIF", ""),
+    },
+    "uptimekuma_down": {
+        "emoji": "🔴",
+        "label": "DOWN",
+        "color": int(os.getenv("UPTIME_KUMA_DOWN_COLOR", "16711680")),
+        "gif": os.getenv("UPTIME_KUMA_GIF", ""),
+    },
+    "uptimekuma_default": {
+        "emoji": "📡",
+        "label": "UPTIME KUMA",
+        "color": int(os.getenv("UPTIME_KUMA_DEFAULT_COLOR", "2201331")),
+        "gif": os.getenv("UPTIME_KUMA_GIF", ""),
+    },
 }

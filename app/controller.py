@@ -85,6 +85,65 @@ def create_app():
             resp = send_discord_payload(content=f"⚠️ **ALERTA** (processamento simplificado)\n```\n{request.get_data(as_text=True)}\n```")
             return '', resp.status_code
 
+    @app.route('/alert_uptimekuma', methods=['POST'])
+    def alert_uptimekuma():
+        try:
+            data = request.json if request.is_json else {}
+            if DEBUG_MODE:
+                print(f"[DEBUG] Received Uptime Kuma data: {data}")
+
+            message = data.get('message') or 'Sem mensagem informada'
+
+            # Uptime Kuma (webhook padrão) envia opcionalmente heartbeat/monitor;
+            # usamos para deixar o alerta mais rico, mas sem depender deles.
+            heartbeat = data.get('heartbeat') or {}
+            monitor = data.get('monitor') or {}
+            monitor_name = monitor.get('name') if isinstance(monitor, dict) else None
+            status_value = heartbeat.get('status') if isinstance(heartbeat, dict) else None
+
+            if status_value == 1:
+                severity_key = 'uptimekuma_up'
+            elif status_value == 0:
+                severity_key = 'uptimekuma_down'
+            else:
+                severity_key = 'uptimekuma_default'
+
+            severity_config = SEVERITY_LEVELS.get(severity_key, SEVERITY_LEVELS.get('uptimekuma_default'))
+
+            title = f"{severity_config['emoji']} **ALERTA UPTIME KUMA**"
+            if monitor_name:
+                title += f" - `{monitor_name}`"
+
+            content_lines = [
+                title,
+                "",
+                f"**Status:** `{severity_config['label']}`",
+                f"**Mensagem:** {message}",
+            ]
+            if heartbeat.get('time'):
+                content_lines.append(f"**Hora:** `{format_timestamp(heartbeat.get('time'))}`")
+            content = "\n".join(content_lines)
+
+            embed = {
+                "color": severity_config['color'],
+                "fields": [
+                    {
+                        "name": "📡 Uptime Kuma",
+                        "value": f"**Status:** {severity_config['label']}\n**Mensagem:** {message}",
+                        "inline": False,
+                    }
+                ],
+            }
+            if severity_config.get('gif'):
+                embed["image"] = {"url": severity_config['gif']}
+
+            resp = send_discord_payload(content=content, embeds=[embed])
+            return '', resp.status_code
+        except Exception as e:
+            if DEBUG_MODE:
+                print(f"[ERROR] Uptime Kuma alert error: {str(e)}")
+            return f'Error: {str(e)}', 500
+
     def enrich_alert_data(alert_data):
         for alert in alert_data.get('alerts', []):
             labels = alert.get('labels', {})
