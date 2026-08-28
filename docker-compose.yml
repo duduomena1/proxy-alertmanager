@@ -16,8 +16,7 @@ services:
       - ./data:/app/data
     restart: unless-stopped
     networks:
-      - grafana_observability
-    
+      - grafana_monitora_network
     # Recursos limitados para produção
     deploy:
       resources:
@@ -50,5 +49,5 @@ services:
     user: "1000:1000"
 
 networks:
-  grafana_observability:
-    driver: bridge
+  grafana_monitora_network:
+    external: true
