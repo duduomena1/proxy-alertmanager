@@ -88,7 +88,16 @@ def create_app():
     @app.route('/alert_uptimekuma', methods=['POST'])
     def alert_uptimekuma():
         try:
-            data = request.json if request.is_json else {}
+            data = request.get_json(force=True, silent=True) or {}
+            if not data:
+                raw = request.get_data(as_text=True)
+                if DEBUG_MODE:
+                    print(f"[DEBUG] Received Uptime Kuma data: {data}")
+                try:
+                    data = json.loads(raw) if raw else{}
+                except Exception:
+                    data = {}
+
             if DEBUG_MODE:
                 print(f"[DEBUG] Received Uptime Kuma data: {data}")
 
