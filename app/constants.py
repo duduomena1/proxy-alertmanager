@@ -117,4 +117,23 @@ SEVERITY_LEVELS = {
         "color": int(os.getenv("UPTIME_KUMA_DEFAULT_COLOR", "2201331")),
         "gif": os.getenv("UPTIME_KUMA_GIF", ""),
     },
+    "hetrix_up": {
+        "emoji": "✅",
+        "label": "ONLINE",
+        "color": int(os.getenv("HETRIX_UP_COLOR", "65280")),
+        "gif": os.getenv("HETRIX_GIF", ""),
+    },
+    "hetrix_down": {
+        "emoji": "🔴",
+        "label": "OFFLINE",
+        "color": int(os.getenv("HETRIX_DOWN_COLOR", "16711680")),
+        "gif": os.getenv("HETRIX_GIF", ""),
+    },
+    "hetrix_default": {
+        "emoji": "📡",
+        "label": "HETRIX",
+        "color": int(os.getenv("HETRIX_DEFAULT_COLOR", "2201331")),
+        "gif": os.getenv("HETRIX_GIF", ""),
+    },
+
 }

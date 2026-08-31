@@ -1,4 +1,4 @@
-# 🚀 Grafana Discord Proxy
+print(f"[DEBUG] Received Uptime Kuma data: {data}")# 🚀 Grafana Discord Proxy
 
 Sistema de monitoramento que integra Grafana, Prometheus e Portainer para enviar alertas formatados ao Discord.
 

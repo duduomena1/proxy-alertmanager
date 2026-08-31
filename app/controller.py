@@ -84,6 +84,53 @@ def create_app():
 
             resp = send_discord_payload(content=f"⚠️ **ALERTA** (processamento simplificado)\n```\n{request.get_data(as_text=True)}\n```")
             return '', resp.status_code
+    
+    @app.route('/alert_hetrix', methods=['POST'])
+    def alert_hetrix():
+        try:
+            data = request.get_json( silent=True) or {}
+ 
+            if DEBUG_MODE:
+               print(f"[DEBUG] Received Hetrix data: {data}")
+            monitor_name = data.get('monitor_name') or 'Monitor não encontrado'
+            monitor_status = data.get('monitor_status') or 'Status não encontrado'
+
+            if monitor_status == 'online':
+                severity_key = 'hetrix_up'
+            elif monitor_status == 'offline':
+                severity_key == 'hetrix_down'
+            else:
+                severity_key == 'hetrix_default'
+
+            severity_config = SEVERITY_LEVELS.get(severity_key, SEVERITY_LEVELS.get('hedrix_default'))
+            status_label =  severity_config['label'] if monitor_status in ('online', 'offline') else (data.get('monitor_status') or 'DESCONHECIDO').upper()
+
+            content = (
+                f"{severity_config['emoji']} **ALERTA HEDRIX** -  `{monitor_name}`\n\n"
+                f"**status:** `{status_label}`"
+            )
+
+            embed = {
+                "color": severity_config['color'],
+                "fields": [  
+                    {                
+                         "name": "📡 HetrixTools",
+                         "value": f"**Monitor:** {monitor_name}\n**Status:** {status_label}",
+                         "inline": False,
+                    }
+                ],
+            }
+
+            if severity_config.get('gif'):
+                embed['image'] = {"url": severity_config['gif']}
+            
+            resp = send_discord_payload(content=content, embeds=[embed])
+            return '', resp.status_code
+        
+        except Exception as e:
+            if DEBUG_MODE:
+                print(f"[ERROR] Hetrix alert error: {str(e)}")
+            return f'Error: {str(e)}, 500'
 
     @app.route('/alert_uptimekuma', methods=['POST'])
     def alert_uptimekuma():
