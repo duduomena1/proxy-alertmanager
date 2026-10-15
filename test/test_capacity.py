@@ -33,7 +33,7 @@ class CapacityTests(unittest.TestCase):
             for kind in ('Disk', 'Memory', 'CPU'):
                 with self.subTest(kind=kind), patch.dict(ALERT_CONFIGS[kind.lower()], gif='https://example.com/alert.gif'):
                     response = client.post('/alert', json={'alerts': [{
-                        'status': 'firing', 'labels': {'alertname': kind, 'instance': 'test:9100', **({'mountpoint': '/data', 'device': '/dev/test', 'disk': 'FATAL'} if kind == 'Disk' else {})},
+                        'status': 'firing', 'labels': {'alertname': f'{kind} - Servidor Produção', 'instance': 'test:9100', **({'mountpoint': '/data', 'device': '/dev/test', 'disk': 'FATAL'} if kind == 'Disk' else {})},
                         'values': {'A': 90, 'C': 1},
                         'annotations': {'available_bytes': 1024**4, 'total_bytes': 10 * 1024**4, 'cpu_idle_percent': 10, 'cpu_count': 16},
                     }]})
@@ -45,6 +45,7 @@ class CapacityTests(unittest.TestCase):
                     embed = payload['embeds'][0]
                     self.assertIn('90.0%', str(embed))
                     self.assertIn('FIRING', embed['description'])
+                    self.assertIn(f'**Alerta:** {kind} - Servidor Produção', embed['description'])
                     self.assertIn('ALERTA DE', embed['title'])
                     self.assertIn('image', embed)
                     self.assertFalse(any(f['name'] == '🏷️ Outras Labels' for f in embed['fields']))

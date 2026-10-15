@@ -396,7 +396,7 @@ def create_app():
                 embed = {
                     "title": f"{config['emoji']} ALERTA DE {config['name']} {severity_config['emoji']}",
                     "color": severity_config['color'],
-                    "description": f"**Nível:** {severity_config['label']} • **Status:** {alert_status.upper()}",
+                    "description": f"**Alerta:** {alertname[:512]}\n**Nível:** {severity_config['label']} • **Status:** {alert_status.upper()}",
                     "fields": [],
                     "footer": {"text": f"Início: {format_timestamp(alert_data.get('startsAt', 'N/A'))}"},
                 }
