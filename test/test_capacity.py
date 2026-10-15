@@ -27,21 +27,30 @@ class CapacityTests(unittest.TestCase):
 
     def test_webhook_messages(self):
         from app.controller import create_app
+        from app.constants import ALERT_CONFIGS
         with patch('app.controller.start_portainer_monitor'), patch('app.controller.ContainerSuppressor'), patch('app.controller.send_discord_payload', return_value=Mock(status_code=204)) as send:
             client = create_app().test_client()
             for kind in ('Disk', 'Memory', 'CPU'):
-                with self.subTest(kind=kind):
+                with self.subTest(kind=kind), patch.dict(ALERT_CONFIGS[kind.lower()], gif='https://example.com/alert.gif'):
                     response = client.post('/alert', json={'alerts': [{
-                        'status': 'firing', 'labels': {'alertname': kind, 'instance': 'test:9100'},
+                        'status': 'firing', 'labels': {'alertname': kind, 'instance': 'test:9100', **({'mountpoint': '/data', 'device': '/dev/test', 'disk': 'FATAL'} if kind == 'Disk' else {})},
                         'values': {'A': 90, 'C': 1},
                         'annotations': {'available_bytes': 1024**4, 'total_bytes': 10 * 1024**4, 'cpu_idle_percent': 10, 'cpu_count': 16},
                     }]})
                     self.assertEqual(response.status_code, 200)
                     payload = send.call_args.kwargs
                     expected = '1.60 de 16 CPUs' if kind == 'CPU' else '1.00 TiB'
-                    self.assertIn(expected, payload['content'])
+                    self.assertIsNone(payload['content'])
                     self.assertIn(expected, str(payload['embeds']))
-                    self.assertIn('90.0%', payload['content'])
+                    embed = payload['embeds'][0]
+                    self.assertIn('90.0%', str(embed))
+                    self.assertIn('FIRING', embed['description'])
+                    self.assertIn('ALERTA DE', embed['title'])
+                    self.assertIn('image', embed)
+                    self.assertFalse(any(f['name'] == '🏷️ Outras Labels' for f in embed['fields']))
+                    if kind == 'Disk':
+                        self.assertIn('/data', str(embed))
+                        self.assertIn('/dev/test', str(embed))
 
 
 if __name__ == '__main__':

@@ -349,66 +349,8 @@ def create_app():
                     if DEBUG_MODE:
                         print(f"[DEBUG] Erro na supressão de container: {exc}")
 
-            elif alert_type == 'disk':
-                lines = [
-                    f"{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}",
-                    "",
-                    f"**Nível:** `{severity_config['label']}` • **Uso:** `{value_text}`",
-                ]
-                if server_display:
-                    lines.append(f"**Servidor:** `{server_display}`")
-                if prometheus_display:
-                    lines.append(f"**Prometheus:** `{prometheus_display}`")
-                if _is_meaningful(device):
-                    lines.append(f"**Dispositivo:** `{device}`")
-                if _is_meaningful(mountpoint):
-                    lines.append(f"**Ponto de montagem:** `{mountpoint}`")
-                lines.append(f"**Uso atual:** `{value_text}`")
-                lines.extend(capacity_details)
-                lines.extend([
-                    "",
-                    f"**📝 Descrição:** {description}",
-                    f"**Status:** `{alert_status.upper()}` • **Hora:** `{format_timestamp(alert_data.get('startsAt', 'N/A'))}`",
-                ])
-                content = "\n".join(lines)
-
-            elif alert_type == 'cpu':
-                lines = [
-                    f"{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}",
-                    "",
-                    f"**Nível:** `{severity_config['label']}` • **Uso:** `{value_text}`",
-                ]
-                if server_display:
-                    lines.append(f"**Servidor:** `{server_display}`")
-                if prometheus_display:
-                    lines.append(f"**Prometheus:** `{prometheus_display}`")
-                lines.append(f"**Uso atual:** `{value_text}`")
-                lines.extend(capacity_details)
-                lines.extend([
-                    "",
-                    f"**📝 Descrição:** {description}",
-                    f"**Status:** `{alert_status.upper()}` • **Hora:** `{format_timestamp(alert_data.get('startsAt', 'N/A'))}`",
-                ])
-                content = "\n".join(lines)
-
-            elif alert_type == 'memory':
-                lines = [
-                    f"{config['emoji']} **ALERTA DE {config['name']}** {severity_config['emoji']}",
-                    "",
-                    f"**Nível:** `{severity_config['label']}` • **Uso:** `{value_text}`",
-                ]
-                if server_display:
-                    lines.append(f"**Servidor:** `{server_display}`")
-                if prometheus_display:
-                    lines.append(f"**Prometheus:** `{prometheus_display}`")
-                lines.append(f"**Uso atual:** `{value_text}`")
-                lines.extend(capacity_details)
-                lines.extend([
-                    "",
-                    f"**📝 Descrição:** {description}",
-                    f"**Status:** `{alert_status.upper()}` • **Hora:** `{format_timestamp(alert_data.get('startsAt', 'N/A'))}`",
-                ])
-                content = "\n".join(lines)
+            elif alert_type in ('disk', 'cpu', 'memory'):
+                content = None  # Estes alertas são enviados somente como card.
 
             else:
                 lines = [
@@ -440,7 +382,39 @@ def create_app():
                 ],
             }
 
-            if alert_type == 'container':
+            if alert_type in ('disk', 'cpu', 'memory'):
+                resource_lines = []
+                if server_display:
+                    resource_lines.append(f"**Servidor:** {server_display}")
+                if prometheus_display:
+                    resource_lines.append(f"**Prometheus:** {prometheus_display}")
+                if alert_type == 'disk':
+                    if _is_meaningful(mountpoint):
+                        resource_lines.append(f"**Montagem:** `{mountpoint}`")
+                    if _is_meaningful(device):
+                        resource_lines.append(f"**Dispositivo:** `{device}`")
+                embed = {
+                    "title": f"{config['emoji']} ALERTA DE {config['name']} {severity_config['emoji']}",
+                    "color": severity_config['color'],
+                    "description": f"**Nível:** {severity_config['label']} • **Status:** {alert_status.upper()}",
+                    "fields": [],
+                    "footer": {"text": f"Início: {format_timestamp(alert_data.get('startsAt', 'N/A'))}"},
+                }
+                if description and description != 'Sem descrição disponível':
+                    embed['description'] += f"\n{description[:3000]}"
+                if resource_lines:
+                    embed['fields'].append({
+                        "name": "🌐 Recurso",
+                        "value": "\n".join(resource_lines)[:1024],
+                        "inline": False,
+                    })
+                embed['fields'].append({
+                    "name": "📈 Uso e capacidade",
+                    "value": "\n".join([f"**Uso atual:** {value_text}"] + capacity_details),
+                    "inline": False,
+                })
+
+            elif alert_type == 'container':
                 container_info = alert_data.get('enriched_data', {}).get('container_context', {})
                 container_name = container_info.get('container_name', device)
                 if metric_value == 1:
@@ -506,7 +480,7 @@ def create_app():
             ignored_annotations = {'description', 'summary', 'message'} | CAPACITY_ANNOTATIONS
             extra_annotations = {k: v for k, v in annotations.items() if k not in ignored_annotations and v and str(v).lower() not in ['n/a', 'unknown', 'none', 'null', '']}
             
-            if extra_labels:
+            if extra_labels and alert_type not in ('disk', 'cpu', 'memory'):
                 labels_str = "\n".join([f"**{k}:** `{v}`" for k, v in extra_labels.items()])
                 if len(labels_str) > 1024:
                     labels_str = labels_str[:1020] + "..."
@@ -553,7 +527,7 @@ def create_app():
             payload_embeds = [alert["embed"]]
             if DEBUG_MODE:
                 print(f"[DEBUG] Sending {alert['type']} alert payload:")
-                print(f"[DEBUG] Content length: {len(alert['content'])}")
+                print(f"[DEBUG] Content length: {len(alert['content'] or '')}")
                 print(f"[DEBUG] Payload: {json.dumps({'content': alert['content'], 'embeds': payload_embeds}, indent=2)[:500]}...")
 
             resp = send_discord_payload(content=alert["content"], embeds=payload_embeds)
