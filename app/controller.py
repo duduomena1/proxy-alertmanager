@@ -6,6 +6,7 @@ from .constants import ALERT_CONFIGS, APP_PORT, DEBUG_MODE, SEVERITY_LEVELS, ALE
 from .constants import CONTAINER_ALWAYS_NOTIFY_ALLOWLIST
 from .constants import CONTAINER_SUPPRESS_REPEATS
 from .constants import PORTAINER_MONITOR_ONLY_SOURCE
+from .capacity import capacity_lines, CAPACITY_ANNOTATIONS
 from .dedupe import TTLCache, build_alert_fingerprint
 from .utils import format_timestamp, extract_metric_value_enhanced, format_metric_value, _is_meaningful
 from .enrichment import extract_real_ip_and_source, build_server_location
@@ -296,6 +297,7 @@ def create_app():
                     server_display = 'Não identificado'
 
             value_text = format_metric_value(metric_value, config['unit'])
+            capacity_details = capacity_lines(alert_type, annotations)
 
             portainer_result = None
 
@@ -367,6 +369,7 @@ def create_app():
                 if _is_meaningful(mountpoint):
                     lines.append(f"**Ponto de montagem:** `{mountpoint}`")
                 lines.append(f"**Uso atual:** `{value_text}`")
+                lines.extend(capacity_details)
                 lines.extend([
                     "",
                     f"**Descrição:** {description}",
@@ -386,6 +389,7 @@ def create_app():
                 if prometheus_display:
                     lines.append(f"**Prometheus:** `{prometheus_display}`")
                 lines.append(f"**Uso atual:** `{value_text}`")
+                lines.extend(capacity_details)
                 lines.extend([
                     "",
                     f"**Descrição:** {description}",
@@ -405,6 +409,7 @@ def create_app():
                 if prometheus_display:
                     lines.append(f"**Prometheus:** `{prometheus_display}`")
                 lines.append(f"**Uso atual:** `{value_text}`")
+                lines.extend(capacity_details)
                 lines.extend([
                     "",
                     f"**Descrição:** {description}",
@@ -487,7 +492,7 @@ def create_app():
 
                 embed["fields"].append({
                     "name": "📈 Métricas",
-                    "value": f"**Valor:** {value_text}\n**Limite:** {threshold_text}",
+                    "value": "\n".join([f"**Valor:** {value_text}", f"**Limite:** {threshold_text}"] + capacity_details),
                     "inline": True,
                 })
 
@@ -510,7 +515,7 @@ def create_app():
             ignored_labels = {'alertname', 'severity', 'instance', 'job', 'host_ip', 'real_host', 'container', 'container_name', 'pod', 'pod_name', 'name', 'namespace', 'node', 'image', 'device', 'mountpoint', 'fstype', 'prometheus_server', 'service_type', 'environment'}
             extra_labels = {k: v for k, v in labels.items() if k not in ignored_labels and v and str(v).lower() not in ['n/a', 'unknown', 'none', 'null', '']}
             
-            ignored_annotations = {'description', 'summary', 'message'}
+            ignored_annotations = {'description', 'summary', 'message'} | CAPACITY_ANNOTATIONS
             extra_annotations = {k: v for k, v in annotations.items() if k not in ignored_annotations and v and str(v).lower() not in ['n/a', 'unknown', 'none', 'null', '']}
             
             if extra_labels:
