@@ -213,3 +213,8 @@ docker logs grafana-discord-proxy-prod -f
  - [ ] Adicionar GIF no alerta do portainer
  - [ ] Adicionar proxy para alertas kafka
  - [ ] Limpar alertas
+
+## Capacidade disponível
+
+Para incluir bytes disponíveis em disco/memória e ociosidade de CPU nos alertas,
+consulte [a configuração das anotações no Grafana](docs/RESOURCE_CAPACITY.md).
