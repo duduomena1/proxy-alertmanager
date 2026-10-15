@@ -1,7 +1,7 @@
 # Capacidade disponível nos alertas
 
-O endpoint `/alert` exibe os números enviados em `alerts[].annotations` tanto
-na mensagem quanto no embed do Discord. Não é necessário configurar acesso do
+O endpoint `/alert` exibe os números enviados em `alerts[].annotations` no card (embed) do Discord, junto ao GIF,
+sem repetir os dados em uma mensagem acima do card. Não é necessário configurar acesso do
 proxy ao Prometheus. `/alert_minimal` e o formato legado não usam esse contrato.
 
 O payload original contém `A=93.078...` (uso) e `C=1` (condição satisfeita).
