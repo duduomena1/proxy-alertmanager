@@ -83,7 +83,12 @@
   "172.16.202.21": {"id": 39, "ssh_user": "dev"},
 
   "SECURITY_PLATE": {"id": 41, "ssh_user": "ipq"},
-  "192.168.202.124": {"id": 41, "ssh_user": "ipq"}
+  "192.168.202.124": {"id": 41, "ssh_user": "ipq"},
 
+  "RS-NFS2": {"id": 42, "ssh_user": "dev"},
+  "172.16.202.81": {"id": 42, "ssh_user": "dev"},
 
+  "FTP-ATENTO": {"id": 43, "ssh_user": "root"},
+  "209.97.157.129": {"id": 43, "ssh_user": "root"}
 }
+
